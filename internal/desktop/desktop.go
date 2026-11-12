@@ -133,7 +133,11 @@ func New(app fyne.App, api API) *UI {
 func (u *UI) reading(key, label string) fyne.CanvasObject {
 	value := widget.NewLabelWithStyle("Unavailable", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	u.values[key] = value
-	return widget.NewCard(label, "", container.NewCenter(value))
+	subtitle := ""
+	if key == "ups_temperature" {
+		subtitle = "Sensor location unverified"
+	}
+	return widget.NewCard(label, subtitle, container.NewCenter(value))
 }
 
 func (u *UI) indicator(key, label string) fyne.CanvasObject {
@@ -177,6 +181,9 @@ func (u *UI) Start() {
 }
 
 func (u *UI) Apply(snapshot control.Snapshot, err error) {
+	if err == nil && snapshot.UPS.SchemaVersion != 1 {
+		err = fmt.Errorf("unsupported backend snapshot schema %d", snapshot.UPS.SchemaVersion)
+	}
 	if err != nil {
 		u.status.SetText("Backend unavailable: " + err.Error())
 		u.power.SetText("Power: unknown; no current verification")
@@ -333,6 +340,9 @@ func (u *UI) command(path string, expected *policy.Status) {
 			return
 		}
 		fyne.Do(func() {
+			if u.closed.Load() {
+				return
+			}
 			if err != nil {
 				dialog.ShowError(err, u.Window)
 			} else {
@@ -363,6 +373,9 @@ func (u *UI) settings() {
 			return
 		}
 		fyne.Do(func() {
+			if u.closed.Load() {
+				return
+			}
 			if err != nil {
 				dialog.ShowError(err, u.Window)
 				return
@@ -423,6 +436,9 @@ func (u *UI) policyForm(settings control.PolicySettings) {
 					return
 				}
 				fyne.Do(func() {
+					if u.closed.Load() {
+						return
+					}
 					if err != nil {
 						dialog.ShowError(err, u.Window)
 					} else {

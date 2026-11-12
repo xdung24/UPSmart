@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -132,5 +133,27 @@ func TestLocalControlRejectsMalformedRequestsAndWrongHost(t *testing.T) {
 	bridge.ServeHTTP(w, httptest.NewRequest("GET", "http://evil.example/snapshot", nil))
 	if w.Code != 403 {
 		t.Fatal("unexpected IPC host accepted")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	w = httptest.NewRecorder()
+	bridge.ServeHTTP(w, httptest.NewRequest("POST", "http://upsmart.local/cancel", nil).WithContext(ctx))
+	if w.Code != http.StatusRequestTimeout {
+		t.Fatal("cancelled queued request entered execution")
+	}
+}
+
+type failingTransport struct{}
+
+func (failingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("untrusted transport details")
+}
+
+func TestInterruptedMutationDisclosesUnknownAcceptance(t *testing.T) {
+	client := &Client{http: &http.Client{Transport: failingTransport{}}}
+	var result policy.Status
+	err := client.Request(context.Background(), "POST", "/shutdown", nil, &result)
+	if err == nil || !strings.Contains(err.Error(), "acceptance is unknown") || strings.Contains(err.Error(), "untrusted transport details") {
+		t.Fatal("ambiguous mutation was reported as definitely unaccepted or leaked transport details", err)
 	}
 }
