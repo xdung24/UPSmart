@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 
 	"upsmart/internal/control"
@@ -22,11 +25,70 @@ func (a *unusedAPI) Request(context.Context, string, string, io.Reader, any) err
 	return errors.New("not started")
 }
 
+type quitApp struct {
+	fyne.App
+	quit chan struct{}
+}
+
+func (a *quitApp) Quit() { close(a.quit) }
+
+type closingAPI struct {
+	unusedAPI
+	started chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+}
+
+func (a *closingAPI) Close() error {
+	if a.calls.Add(1) == 1 {
+		close(a.started)
+	}
+	<-a.release
+	return nil
+}
+
+func TestQuitJoinsOwnedMonitorBeforeExitingAndIsIdempotent(t *testing.T) {
+	base := test.NewApp()
+	defer base.Quit()
+	app := &quitApp{App: base, quit: make(chan struct{})}
+	api := &closingAPI{started: make(chan struct{}), release: make(chan struct{})}
+	ui := New(app, api)
+	ui.Quit()
+	select {
+	case <-api.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Quit did not stop the owned monitor")
+	}
+	select {
+	case <-app.quit:
+		t.Fatal("desktop exited before owned monitoring stopped")
+	default:
+	}
+	ui.Quit()
+	close(api.release)
+	select {
+	case <-app.quit:
+	case <-time.After(3 * time.Second):
+		t.Fatal("desktop did not finish quitting after monitoring stopped")
+	}
+	if api.calls.Load() != 1 {
+		t.Fatal("repeated Quit stopped the owner more than once")
+	}
+}
+
 func TestNativeViewShowsFreshUnavailableCountdownAndBackendLoss(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 	api := new(unusedAPI)
 	ui := New(app, api)
+	ui.SetDirect(true)
+	if !strings.Contains(ui.source.Text, "Direct USB") || !strings.Contains(ui.footer.Text, "Quit stops direct USB") {
+		t.Fatal("direct ownership/quit semantics not disclosed")
+	}
+	ui.SetDirect(false)
+	if !strings.Contains(ui.source.Text, "Daemon") || !strings.Contains(ui.footer.Text, "daemon monitoring") {
+		t.Fatal("daemon ownership/quit semantics not disclosed")
+	}
 	store := state.New(10*time.Second, true)
 	now := time.Now()
 	result := ups.Result{Devices: []ups.Device{{Product: "MEC0003"}}, Status: "(230.0 000.0 234.0 014 50.1 27.0 29.0 10001000\r"}

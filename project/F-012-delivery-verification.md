@@ -10,7 +10,7 @@ The user downloads/builds one executable, runs monitoring in console mode, compa
 
 ## Implementation
 
-- Current entry point: root `main.go`, with embedded web assets and build configuration. The user approved adapting to this layout after it changed during implementation.
+- Current backend entry point: `cmd/ups-daemon/main.go`; desktop: `cmd/upsmart-desktop/main.go`. Earlier root-entry commands below record the previous layout.
 - Target Windows amd64 with Go modules; commit dependency checksums if third-party dependencies are introduced. Prefer native Windows HID calls and avoid mandatory vendor DLLs, external web assets or CGO unless protocol evidence requires them.
 - Provide version/build information, example monitoring-only configuration, CLI help and administrator install/uninstall instructions.
 - Keep instructions as flat project feature documents; put lifecycle usage in [F-006](F-006-windows-service.md), configuration usage in [F-008](F-008-configuration.md) and quality evidence in [F-015](F-015-quality.md).
@@ -81,6 +81,12 @@ The historical cputemp adaptation and its embedded notice/footer link were subse
 
 ### Fyne native desktop candidate - 2026-11-12
 
-Separate `bin/upsmart-desktop.exe` is now built by `build-desktop.ps1` using Fyne/CGO and the supported Go internal linker; the older external MinGW link fails Windows loading in this environment ([E-006](E-006-native-desktop-linker.md)). An actual native-window smoke launch exited 0 with backend polling disabled. Backend `bin/upsmart-next.exe` also builds with CGO disabled.
+Separate `bin/upsmart-desktop.exe` builds using Fyne/CGO and the supported Go internal linker; the current direct command is in [F-018](F-018-native-desktop.md). The older external MinGW link fails Windows loading in this environment ([E-006](E-006-native-desktop-linker.md)). An actual native-window smoke launch exited 0 with backend polling disabled. Backend `bin/upsmart-next.exe` also builds with CGO disabled.
 
-Build/startup evidence and exact connection configuration are in [F-018](F-018-native-desktop.md). GUI startup is not evidence that the existing backend was upgraded or a service installed: local configuration/processes remain unchanged. Live desktop data needs a deliberate IPC-enabled backend deployment. Charts, general settings editors, visual/tray interaction, clean-machine redistribution/signing and LocalService rights remain pending; shutdown policy settings/controls are implemented.
+Build/startup evidence and exact connection configuration are in [F-018](F-018-native-desktop.md). GUI startup is not evidence that the existing backend was upgraded or a service installed: local configuration/processes remain unchanged. Daemon-mode data needs an IPC-enabled backend; direct mode can monitor independently. Charts, general settings editors, visual/tray interaction, clean-machine redistribution/signing and LocalService rights remain pending; shutdown policy settings/controls are implemented.
+
+The concurrent daemon relocation was preserved. Build the current backend with `go build -o .\bin\upsmart-next.exe .\cmd\ups-daemon`, not the historical root-package command.
+
+Windows build shortcut - 2026-11-12: root [build.cmd](../build.cmd) builds both candidates with local environment settings, the verified GUI linker flags and CGO disabled for the daemon. The shortened [README](../README.md) documents this entry point. Actual invocation from outside the project directory built both executables successfully; a missing-Go check returned exit 1 without a success message. The script starts no monitor/service and restores the caller's directory/environment.
+
+Later dual-mode delivery: the desktop now tries the daemon first, otherwise hosts the shared monitor engine with exclusive USB ownership. No-argument direct startup uses documented USB-only defaults and per-user saved policy; `--config PATH` selects explicit direct settings. Quit stops only desktop-owned monitoring, never a daemon. The earlier UI-only launch description applies only to daemon attachment or `--smoke-test`. Full tests/vet, repeated affected regressions, both native builds and offline GUI/helper startup checks passed; live GUI USB/handover remains untested. See [F-018](F-018-native-desktop.md) for current commands and limitations.

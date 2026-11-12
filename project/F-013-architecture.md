@@ -10,7 +10,7 @@ The application continues serving honest health information even when the device
 
 ## Proposed architecture
 
-Go was confirmed by the user. Root `main.go` composes `internal/config`, `internal/ups`, `internal/state`, `internal/events`, `internal/service`, `internal/web` and optional hardware/Telegram workers. The opt-in shutdown candidate also composes `internal/policy` and the injectable `internal/platform` shutdown adapter.
+Go was confirmed by the user. `cmd/ups-daemon/main.go` and direct mode in `cmd/upsmart-desktop/main.go` call the shared `internal/monitor.Run` lifecycle, composing configuration, USB, state/events, web and optional hardware/Telegram workers. The opt-in shutdown candidate also composes `internal/policy` and the injectable `internal/platform` shutdown adapter. Earlier root-entry references below record the prior layout.
 
 Data flow: serialized transport -> protocol parser -> validated sample -> state reducer -> immutable snapshot. The reducer emits bounded events and policy inputs. HTTP reads snapshots only. Only the policy controller can invoke an injected OS shutdown adapter.
 
@@ -73,8 +73,16 @@ Telemetry-to-policy-to-API and confirmed-command-to-dry-run tests pass with fake
 
 ### Native desktop separation - 2026-11-12
 
-[F-018](F-018-native-desktop.md) adds `cmd/upsmart-desktop`, `internal/desktop` and `internal/control`. The desktop is not a second USB owner: it reads cached typed snapshots/events/hardware and submits confirmed policy operations through a protected Windows named pipe. It may quit independently without stopping the backend.
+[F-018](F-018-native-desktop.md) adds `cmd/upsmart-desktop`, `internal/desktop` and `internal/control`. Widgets read cached typed snapshots/events/hardware and submit confirmed policy operations through a protected Windows named pipe. With a daemon, desktop Quit leaves monitoring alone. The later dual-mode extension below supersedes service-client-only operation.
 
 The backend owns one optional pipe HTTP-framing server with account ACLs and no TCP control routes. Optional web and independent Telegram workers are read-only. Bridge requests serialize policy edits/confirmation checks; controller state/dispatch remains independently serialized. Disk persistence occurs before activation, outside the snapshot lock. Cancelled queued requests do not execute; interrupted mutating requests disclose unknown acceptance rather than claiming no side effect.
 
 The disabled-policy evaluation worker still runs when desktop IPC exists so an explicitly saved policy can be enabled without restarting monitoring. Effective persisted policy loading is shared with offline configuration validation. Backend remains buildable without CGO; only the separate Fyne GUI requires the compiler/graphics stack.
+
+### Dual-mode ownership - 2026-11-12
+
+The user selected daemon-first startup with direct USB fallback only when no daemon owns monitoring. `internal/monitor.Connect` probes the pipe, then starts the same `Run` engine inside the desktop if needed. The existing global ownership guard precedes all polling/listener startup; failed/inaccessible daemon IPC is never permission to bypass it. A second probe handles a daemon winning the startup race. A compatible daemon requires no direct configuration load or USB access.
+
+`Session` owns cancellation/join only for a direct runtime. A direct runtime failure latches connection failure; existing desktop sessions never silently transfer ownership after disconnect. Native helper dispatch is shared by both executables before GUI construction, preserving process-isolated bounded HID calls. Window close hides; explicit Quit joins desktop-owned workers but never stops the service. No background child daemon is left behind.
+
+Simulation tests, full tests/vet, both Windows builds, offline native-window startup and invalid-helper rejection passed. Live final-GUI USB/SCM handover remains pending; detailed evidence and defaults are in [F-018](F-018-native-desktop.md).

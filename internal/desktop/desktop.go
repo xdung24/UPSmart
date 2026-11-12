@@ -37,6 +37,8 @@ type UI struct {
 	cancel    context.CancelFunc
 	closed    atomic.Bool
 	status    *widget.Label
+	source    *widget.Label
+	footer    *widget.Label
 	power     *widget.Label
 	policy    *widget.Label
 	elapsed   *widget.Label
@@ -61,6 +63,9 @@ func New(app fyne.App, api API) *UI {
 	u.Window.SetIcon(theme.ComputerIcon())
 	u.Window.Resize(fyne.NewSize(900, 720))
 	u.status = widget.NewLabel("Backend not connected. Start the configured monitor/service.")
+	u.source = widget.NewLabel("Connection source: not selected")
+	u.footer = widget.NewLabel("Closing hides to the tray. Quit stops only desktop-owned monitoring, never a daemon.")
+	u.footer.Wrapping = fyne.TextWrapWord
 	u.status.Wrapping = fyne.TextWrapWord
 	u.power = widget.NewLabel("Power: unknown")
 	u.policy = widget.NewLabel("PC shutdown policy: unknown")
@@ -112,17 +117,17 @@ func New(app fyne.App, api API) *UI {
 		widget.NewToolbarAction(theme.HistoryIcon(), func() { u.tabs.SelectIndex(2) }),
 		widget.NewToolbarSpacer(),
 		widget.NewToolbarAction(theme.InfoIcon(), func() {
-			dialog.ShowInformation("About UPSmart Monitor", "Independent ARES AR2000 monitor\nFyne desktop / Go backend\nDesktop controls: local Windows account only\nWeb and Telegram: read-only\nNo PC hardware temperature monitoring.", u.Window)
+			dialog.ShowInformation("About UPSmart Monitor", "Independent ARES AR2000 monitor\nFyne desktop / shared Go monitoring engine\nDaemon preferred; direct USB only with exclusive ownership\nDesktop controls: local Windows account only\nWeb and Telegram: read-only\nNo PC hardware temperature monitoring.", u.Window)
 		}))
-	header := container.NewVBox(widget.NewLabelWithStyle("UPSmart Monitor", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), toolbar, u.status, u.power)
-	u.Window.SetContent(container.NewBorder(header, widget.NewLabel("Closing the window does not stop monitoring. Use tray Quit to exit the desktop."), nil, nil, u.tabs))
+	header := container.NewVBox(widget.NewLabelWithStyle("UPSmart Monitor", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), toolbar, u.source, u.status, u.power)
+	u.Window.SetContent(container.NewBorder(header, u.footer, nil, nil, u.tabs))
 	if desktop, ok := app.(fynedesktop.App); ok {
 		desktop.SetSystemTrayIcon(theme.ComputerIcon())
 		desktop.SetSystemTrayMenu(fyne.NewMenu("UPSmart Monitor",
 			fyne.NewMenuItem("Show UPSmart", u.Show),
 			fyne.NewMenuItem("Settings", func() { u.Show(); u.settings() }),
 			fyne.NewMenuItemSeparator(),
-			fyne.NewMenuItem("Quit desktop (monitor continues)", u.Quit)))
+			fyne.NewMenuItem("Quit desktop", u.Quit)))
 		desktop.SetSystemTrayWindow(u.Window)
 		u.Window.SetCloseIntercept(u.Window.Hide)
 	}
@@ -148,12 +153,46 @@ func (u *UI) indicator(key, label string) fyne.CanvasObject {
 
 func (u *UI) Show() { u.Window.Show(); u.Window.RequestFocus() }
 
+func (u *UI) SetDirect(direct bool) {
+	if direct {
+		u.source.SetText("Connection source: Direct USB (desktop owns monitoring)")
+		u.footer.SetText("Closing hides to the tray and keeps monitoring. Quit stops direct USB monitoring and PC shutdown protection.")
+	} else {
+		u.source.SetText("Connection source: Daemon / existing monitor (local named pipe)")
+		u.footer.SetText("Closing hides to the tray. Quit exits only this desktop; daemon monitoring continues.")
+	}
+}
+
 func (u *UI) Quit() {
-	u.closed.Store(true)
+	if !u.closed.CompareAndSwap(false, true) {
+		return
+	}
 	u.cancel()
-	u.Window.SetCloseIntercept(nil)
-	u.Window.Close()
-	u.app.Quit()
+	finish := func() {
+		u.Window.SetCloseIntercept(nil)
+		u.Window.Close()
+		u.app.Quit()
+	}
+	if closer, ok := u.api.(io.Closer); ok {
+		u.shutdown.Disable()
+		u.cancelBtn.Disable()
+		u.status.SetText("Closing desktop; waiting for desktop-owned monitoring to stop...")
+		go func() {
+			err := closer.Close()
+			fyne.Do(func() {
+				if err != nil {
+					u.Show()
+					message := dialog.NewError(err, u.Window)
+					message.SetOnClosed(finish)
+					message.Show()
+					return
+				}
+				finish()
+			})
+		}()
+		return
+	}
+	finish()
 }
 
 func (u *UI) Start() {

@@ -10,7 +10,7 @@ An administrator installs the service once. Normal monitoring starts automatical
 
 ## Implementation
 
-- Current entry points: root `main.go` and `internal/service/{handler,manage,install}_windows.go`.
+- Current entry points: `cmd/ups-daemon/main.go`, shared `internal/monitor/monitor.go` and `internal/service/{handler,manage,install}_windows.go`; earlier root-entry references below are historical.
 - Provide console mode for diagnosis and explicit `service install`, `service start`, `service stop`, `service uninstall` operations.
 - Use Windows Service Control Manager APIs through a maintained Windows Go package if Go is selected.
 - Service and console modes share one application lifecycle; no tray application or interactive service desktop dependency.

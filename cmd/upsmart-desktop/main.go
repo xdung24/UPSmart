@@ -3,31 +3,107 @@
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
+	"log"
+	"os"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/widget"
 
 	"upsmart/internal/control"
 	"upsmart/internal/desktop"
+	"upsmart/internal/monitor"
+	"upsmart/internal/ups"
 )
 
 func main() {
+	if handled, err := ups.HandleHelper(os.Args[1:], os.Stdout); handled {
+		if err != nil {
+			log.Print(err)
+			os.Exit(1)
+		}
+		return
+	}
 	smoke := flag.Bool("smoke-test", false, "show the desktop briefly, then quit; no backend/control actions")
+	configPath := flag.String("config", "", "direct-mode configuration; omitted uses USB-only defaults and per-user policy settings")
 	flag.Parse()
+	app := app.NewWithID("local.upsmart.monitor")
+	if flag.NArg() != 0 {
+		showError(app.NewWindow("UPSmart Monitor - connection error"), app, fmt.Errorf("unexpected positional arguments"))
+		app.Run()
+		return
+	}
 	client := control.NewClient()
 	defer client.Close()
-	app := app.NewWithID("local.upsmart.monitor")
-	ui := desktop.New(app, client)
-	ui.Show()
 	if *smoke {
+		ui := desktop.New(app, client)
+		ui.Show()
 		go func() {
 			time.Sleep(3 * time.Second)
 			fyne.Do(ui.Quit)
 		}()
-	} else {
-		ui.Start()
+		app.Run()
+		return
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	app.Lifecycle().SetOnStopped(cancel)
+	loading := app.NewWindow("UPSmart Monitor")
+	loading.SetContent(widget.NewLabel("Connecting to daemon...\nIf no monitor owns the UPS, direct USB monitoring will start.\nClose this window to cancel startup."))
+	loading.Resize(fyne.NewSize(640, 150))
+	loading.Show()
+	var session *monitor.Session
+	connected := make(chan struct{})
+	go func() {
+		defer close(connected)
+		var err error
+		session, err = monitor.Connect(ctx, client, func(ctx context.Context, ready func()) error {
+			cfg, err := monitor.DirectConfig(*configPath)
+			if err != nil {
+				return err
+			}
+			executable, err := os.Executable()
+			if err != nil {
+				return err
+			}
+			return monitor.Run(ctx, cfg, ups.Worker{Executable: executable}, ready)
+		})
+		fyne.Do(func() {
+			if ctx.Err() != nil {
+				return
+			}
+			if err != nil {
+				showError(loading, app, err)
+				return
+			}
+			ui := desktop.New(app, session)
+			ui.SetDirect(session.Direct())
+			ui.Show()
+			ui.Start()
+			loading.Close()
+		})
+	}()
 	app.Run()
+	cancel()
+	<-connected
+	if session != nil {
+		if err := session.Close(); err != nil {
+			log.Printf("stop direct USB monitor: %v", err)
+		}
+	}
+}
+
+func showError(window fyne.Window, app fyne.App, err error) {
+	log.Print(err)
+	window.SetTitle("UPSmart Monitor - connection error")
+	label := widget.NewLabel(err.Error() + "\n\nA running monitor must enable desktop IPC. Direct USB cannot take ownership from it.\nClose legacy UPSmart before direct monitoring. Use --config PATH for custom direct settings.")
+	label.Wrapping = fyne.TextWrapWord
+	window.SetContent(container.NewBorder(nil, widget.NewButton("Quit", app.Quit), nil, nil, label))
+	window.Resize(fyne.NewSize(640, 240))
+	window.Show()
 }

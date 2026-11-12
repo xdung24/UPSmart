@@ -40,6 +40,8 @@ The user can see which acceptance criteria passed in simulation, which passed on
 
 ## Results and assessment
 
+Latest dual-mode desktop continuation: full Go tests/vet, five repeated monitor/desktop/UPS regressions, both Windows builds, offline native-window startup and invalid-helper rejection passed. These checks use simulated ownership/monitoring and do not establish live GUI USB/service handover. Detailed evidence, including no active config changes or live actions, is in [F-018](F-018-native-desktop.md).
+
 2026-11-12: documentation validation passed: 18 Markdown files, 50 resolving local links, exactly one detail file and PLAN row for each ID F-000 through F-015, and no documentation subdirectories. QA-05 passed for this documentation change.
 
 Later on 2026-11-12, the monitoring milestone was implemented and checked with Go 1.26.5, Windows 10 Pro 10.0.19045 amd64:

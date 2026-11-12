@@ -27,4 +27,4 @@ go build -ldflags "-H=windowsgui -linkmode=internal" -o .\bin\upsmart-desktop.ex
 
 The resulting executable launched a real native window titled `UPSmart Monitor`, then exited 0 in smoke mode. The controlled linker-path change establishes compatibility of the documented build path; a specific GCC/binutils defect or fix in newer compilers is not claimed.
 
-`build-desktop.ps1` and desktop build instructions persist these flags. No PE-header edits, compiler replacement, global toolchain settings, service operation or actual power test were used. This does not resolve or retest the separate race-runtime observation [E-003](E-003-race-runtime-startup.md).
+The first delivery used `build-desktop.ps1`; current direct build instructions in [F-018](F-018-native-desktop.md) retain these flags after that script was removed separately. No PE-header edits, compiler replacement, global toolchain settings, service operation or actual power test were used. This does not resolve or retest the separate race-runtime observation [E-003](E-003-race-runtime-startup.md).
