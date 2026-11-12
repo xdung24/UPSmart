@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UPSmart Monitor</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><span class="eyebrow">ARES AR2000</span><h1>UPSmart Monitor</h1><p>Local, read-only UPS monitoring</p></header>
+    <section aria-labelledby="status-title">
+      <h2 id="status-title">Connection</h2>
+      <p id="connection" role="status">Connecting to local server...</p>
+      <p id="device">Device: not identified</p>
+      <p id="power">Power: unknown</p>
+      <p id="updated">Last successful update: none</p>
+      <ul id="warnings" aria-label="Warnings"></ul>
+    </section>
+    <section aria-labelledby="readings-title"><h2 id="readings-title">Readings</h2><div id="readings" class="grid"></div></section>
+    <section aria-labelledby="hardware-title">
+      <h2 id="hardware-title">PC hardware</h2>
+      <p id="hardware-status" role="status">Checking hardware monitoring...</p>
+      <div id="hardware-readings" class="grid"></div>
+    </section>
+    <section><h2>Telegram notifications</h2><p id="telegram-status" role="status">Checking notification status...</p></section>
+    <section><h2>PC shutdown policy</h2><p id="policy-status" role="status">Checking policy...</p><p id="command-status">Checking Telegram commands...</p><p>This dashboard and Telegram commands are read-only. Use the authorized Windows desktop for policy settings and confirmed shutdown/cancel. Cancellation works only before the Windows request; applications may block shutdown. UPS output control is unavailable.</p></section>
+    <section><h2>Recent events</h2><p id="history-status">Checking event storage...</p><ol id="events"></ol></section>
+    <footer>Other local users and processes can read this dashboard. No browser power-control endpoints exist.</footer>
+  </main>
+</body>
+</html>
