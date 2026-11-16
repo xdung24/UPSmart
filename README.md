@@ -34,7 +34,9 @@ For normal use, close legacy UPSmart before direct USB polling:
 bin\upsmart-desktop.exe
 ```
 
-The desktop connects to the daemon first; otherwise it polls USB directly with
-exclusive ownership. Closing hides to the tray; Quit stops only desktop-owned monitoring.
+The desktop tries named pipe, localhost web API, then direct USB with exclusive
+ownership. No Windows service is required. Web mode is read-only. The web address
+is discovered from adjacent/local configuration or set with `--web-address 127.0.0.1:18765`.
+Closing hides to the tray; Quit stops only desktop-owned monitoring.
 
 See the [desktop guide](project/F-018-native-desktop.md) for configuration and limitations.

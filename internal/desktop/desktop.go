@@ -52,6 +52,7 @@ type UI struct {
 	lights    map[string]*canvas.Circle
 	flow      *widget.Label
 	last      control.Snapshot
+	readOnly  bool
 	started   time.Time
 }
 
@@ -62,7 +63,7 @@ func New(app fyne.App, api API) *UI {
 	u.Window = app.NewWindow("UPSmart Monitor")
 	u.Window.SetIcon(theme.ComputerIcon())
 	u.Window.Resize(fyne.NewSize(900, 720))
-	u.status = widget.NewLabel("Backend not connected. Start the configured monitor/service.")
+	u.status = widget.NewLabel("Backend not connected. Start a daemon or use direct USB; no Windows service is required.")
 	u.source = widget.NewLabel("Connection source: not selected")
 	u.footer = widget.NewLabel("Closing hides to the tray. Quit stops only desktop-owned monitoring, never a daemon.")
 	u.footer.Wrapping = fyne.TextWrapWord
@@ -160,6 +161,17 @@ func (u *UI) SetDirect(direct bool) {
 	} else {
 		u.source.SetText("Connection source: Daemon / existing monitor (local named pipe)")
 		u.footer.SetText("Closing hides to the tray. Quit exits only this desktop; daemon monitoring continues.")
+	}
+}
+
+func (u *UI) SetReadOnly(readOnly bool) {
+	u.readOnly = readOnly
+	if readOnly {
+		u.source.SetText("Connection source: Web API (read-only)")
+		u.source.Wrapping = fyne.TextWrapWord
+		u.footer.SetText("Web connection: power controls/settings require the named pipe. Quit exits only this desktop; daemon monitoring continues.")
+		u.shutdown.Disable()
+		u.cancelBtn.Disable()
 	}
 }
 
@@ -301,10 +313,10 @@ func (u *UI) Apply(snapshot control.Snapshot, err error) {
 	terminal := s.Policy.State == "requested" || s.Policy.State == "failed" || s.Policy.State == "dry_run"
 	u.shutdown.Disable()
 	u.cancelBtn.Disable()
-	if s.Policy.ManualEnabled && s.Policy.State != "pending" && !terminal {
+	if !u.readOnly && s.Policy.ManualEnabled && s.Policy.State != "pending" && !terminal {
 		u.shutdown.Enable()
 	}
-	if s.Policy.State == "pending" {
+	if !u.readOnly && s.Policy.State == "pending" {
 		u.cancelBtn.Enable()
 	}
 	var events strings.Builder
@@ -405,6 +417,10 @@ func (u *UI) confirmShutdown() {
 }
 
 func (u *UI) settings() {
+	if u.readOnly {
+		dialog.ShowInformation("Read-only web connection", "Policy editing and power controls require the protected local named pipe. The daemon may run as a normal executable; a Windows service is not required.", u.Window)
+		return
+	}
 	go func() {
 		var value control.PolicySettings
 		err := u.api.Request(u.ctx, http.MethodGet, "/policy", nil, &value)

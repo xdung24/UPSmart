@@ -252,7 +252,7 @@ func (c *Client) Request(ctx context.Context, method, path string, body io.Reade
 		if method == http.MethodPost || method == http.MethodPut {
 			return errors.New("desktop request interrupted; backend acceptance is unknown; reconnect and check policy state before retrying")
 		}
-		return errors.New("desktop backend unavailable; start the configured monitor/service with desktop IPC enabled")
+		return errors.New("desktop named pipe unavailable; enable IPC in the daemon for full controls, or use its read-only web API; no Windows service is required")
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))

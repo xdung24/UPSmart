@@ -14,37 +14,77 @@ type Client interface {
 	Request(context.Context, string, string, io.Reader, any) error
 }
 
+type Connections struct {
+	Pipe Client
+	Web  func() (Client, error)
+}
+
 type Session struct {
 	client Client
+	web    bool
 	cancel context.CancelFunc
 	done   chan struct{}
 	err    error
 }
 
 // Connect chooses an owner once. Connection loss never silently transfers control.
-func Connect(ctx context.Context, client Client, start func(context.Context, func()) error) (*Session, error) {
-	probe := func() (bool, error) {
+func Connect(ctx context.Context, connections Connections, start func(context.Context, func()) error) (*Session, error) {
+	probe := func(client Client) (bool, error) {
 		var snapshot control.Snapshot
 		if err := client.Request(ctx, http.MethodGet, "/snapshot", nil, &snapshot); err != nil {
-			return false, err
+			return errors.Is(err, control.ErrInvalidWebResponse), err
 		}
 		if snapshot.UPS.SchemaVersion != 1 {
 			return true, fmt.Errorf("unsupported monitor snapshot schema %d", snapshot.UPS.SchemaVersion)
 		}
 		return true, nil
 	}
-	reachable, probeErr := probe()
-	if reachable {
-		if probeErr != nil {
-			return nil, probeErr
+	unavailable := errors.New("no daemon transport available")
+	var web Client
+	resolved := false
+	find := func() (*Session, error) {
+		reachable, pipeErr := probe(connections.Pipe)
+		if reachable {
+			if pipeErr != nil {
+				return nil, pipeErr
+			}
+			return &Session{client: connections.Pipe}, nil
 		}
-		return &Session{client: client}, nil
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !resolved && connections.Web != nil {
+			var err error
+			web, err = connections.Web()
+			if err != nil {
+				return nil, err
+			}
+			resolved = true
+		}
+		if web != nil {
+			reachable, webErr := probe(web)
+			if reachable {
+				if webErr != nil {
+					return nil, webErr
+				}
+				return &Session{client: web, web: true}, nil
+			}
+			pipeErr = errors.Join(pipeErr, webErr)
+		}
+		return nil, fmt.Errorf("%w: %w", unavailable, pipeErr)
+	}
+	existing, probeErr := find()
+	if probeErr == nil {
+		return existing, nil
+	}
+	if !errors.Is(probeErr, unavailable) {
+		return nil, probeErr
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	directCtx, cancel := context.WithCancel(ctx)
-	session := &Session{client: client, cancel: cancel, done: make(chan struct{})}
+	session := &Session{client: connections.Pipe, cancel: cancel, done: make(chan struct{})}
 	ready := make(chan struct{})
 	go func() {
 		session.err = start(directCtx, func() { close(ready) })
@@ -65,8 +105,8 @@ func Connect(ctx context.Context, client Client, start func(context.Context, fun
 		return nil, errors.Join(err, stopErr)
 	}
 	// A daemon may have acquired ownership between the initial probe and startup.
-	if _, err := probe(); err == nil {
-		return &Session{client: client}, nil
+	if existing, err := find(); err == nil {
+		return existing, nil
 	}
 	if stopErr == nil {
 		stopErr = errors.New("direct monitor stopped before becoming available")
@@ -75,6 +115,8 @@ func Connect(ctx context.Context, client Client, start func(context.Context, fun
 }
 
 func (s *Session) Direct() bool { return s.done != nil }
+
+func (s *Session) ReadOnly() bool { return s.web }
 
 func (s *Session) Request(ctx context.Context, method, path string, body io.Reader, result any) error {
 	if s.done != nil {

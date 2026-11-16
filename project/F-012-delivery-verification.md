@@ -83,7 +83,7 @@ The historical cputemp adaptation and its embedded notice/footer link were subse
 
 Separate `bin/upsmart-desktop.exe` builds using Fyne/CGO and the supported Go internal linker; the current direct command is in [F-018](F-018-native-desktop.md). The older external MinGW link fails Windows loading in this environment ([E-006](E-006-native-desktop-linker.md)). An actual native-window smoke launch exited 0 with backend polling disabled. Backend `bin/upsmart-next.exe` also builds with CGO disabled.
 
-Build/startup evidence and exact connection configuration are in [F-018](F-018-native-desktop.md). GUI startup is not evidence that the existing backend was upgraded or a service installed: local configuration/processes remain unchanged. Daemon-mode data needs an IPC-enabled backend; direct mode can monitor independently. Charts, general settings editors, visual/tray interaction, clean-machine redistribution/signing and LocalService rights remain pending; shutdown policy settings/controls are implemented.
+Build/startup evidence and exact connection configuration are in [F-018](F-018-native-desktop.md). GUI startup is not evidence that the existing backend was upgraded or a service installed: local configuration/processes remain unchanged. Daemon-mode data uses either its named pipe or existing read-only web API; direct mode can monitor independently. Windows service installation is optional. Charts, general settings editors, visual/tray interaction, clean-machine redistribution/signing and LocalService rights remain pending; shutdown policy settings/controls are implemented.
 
 The concurrent daemon relocation was preserved. Build the current backend with `go build -o .\bin\upsmart-next.exe .\cmd\ups-daemon`, not the historical root-package command.
 

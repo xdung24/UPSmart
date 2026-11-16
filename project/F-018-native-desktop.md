@@ -1,6 +1,6 @@
 # F-018 - Fyne Windows desktop
 
-Updated: 2026-11-12 | Priority: P1 | Status: Dual-mode candidate tested/built; native startup verified; live handover pending
+Updated: 2026-11-12 | Priority: P1 | Status: Pipe/web/direct candidate tested/built; service installation not required
 
 ## Purpose and user journey
 
@@ -10,7 +10,7 @@ The user opens the desktop to see readings, power flow, connection/UPS/mains/bat
 
 ## Confirmed decisions
 
-- Dual-mode architecture: prefer the daemon; otherwise the desktop hosts the same USB, policy, event and Telegram engine. Exactly one process owns monitoring. This supersedes the original service-client-only choice.
+- Available transports: prefer named pipe, then localhost web API, otherwise host the same USB engine directly. Exactly one process owns monitoring. The daemon may run as a normal executable; Windows service installation is optional.
 - Desktop is the primary control surface. No Administrator/UAC prompt for normal desktop operations; authorize the configured Windows account through a protected local named pipe.
 - Web dashboard is optional and remains read-only/loopback-only.
 - Telegram is status/checking commands and notifications only. Previous Telegram shutdown/confirmation/cancel commands are superseded, not retained as hidden capabilities.
@@ -19,7 +19,17 @@ The user opens the desktop to see readings, power flow, connection/UPS/mains/bat
 
 ## Technical design and first delivery
 
-### Confirmed dual-mode extension - 2026-11-12
+### Confirmed transport selection - 2026-11-12
+
+The desktop must use whatever is available: named pipe, localhost web API, or direct USB, in that order. A Windows service is not required: a foreground daemon can provide either transport. HTTP mode uses existing cached GET APIs only and disables policy editing/shutdown/cancel; full controls still require the protected pipe. No writable web routes are introduced.
+
+After a failed pipe probe, discover the web address from `--web-address`, explicit `--config`, adjacent `config.local.json`, current-directory `config.local.json`, or the default `127.0.0.1:8080`, in that order. Configuration errors must be visible. Discovery never rewrites configuration or implicitly enables its direct-mode settings. Selection stays fixed for the session; direct USB remains protected by the global owner guard.
+
+- DESK-12: pipe wins without web/config access; web wins without starting USB; only unavailable remote transports allow a direct attempt.
+- DESK-13: web-only readings/hardware/events retain honest quality and freshness. Power controls remain disabled even if the remote policy is enabled/pending; client-side mutation attempts produce an explicit error without network I/O.
+- DESK-14: web access is bounded, numeric IPv4 loopback only, with no proxy/redirects. Failed/invalid/oversized responses do not publish partial snapshots. No service/configuration change is needed for an existing compatible web daemon.
+
+### Earlier dual-mode extension - 2026-11-12
 
 The user now requests both direct USB and daemon connections, superseding service-client-only operation. Startup tries the daemon first, then starts the same monitoring engine inside the desktop only if exclusive ownership is available. A running daemon without usable IPC must block direct mode, not permit competing USB access. No automatic service stop, takeover or elevation.
 
@@ -27,7 +37,7 @@ Closing still hides to the tray. Quit stops desktop-owned monitoring in direct m
 
 Extract the existing lifecycle into `internal/monitor` for console, SCM and desktop reuse. Keep isolated/bounded HID helpers in both executables. Direct startup without `--config` initially uses read-only defaults (USB enabled; web, hardware, Telegram and shutdown disabled), plus per-user durable policy storage. Previously saved direct-mode policy is restored, including explicitly enabled power controls. An explicitly supplied configuration must load successfully and is never silently replaced.
 
-- DESK-08: a reachable compatible daemon wins without loading direct settings or touching USB.
+- DESK-08: a reachable compatible named pipe wins without loading web/direct settings or touching USB.
 - DESK-09: absent daemon starts direct monitoring once; existing ownership, legacy conflicts and startup failures remain visible. A daemon winning a startup race is retried rather than replaced.
 - DESK-10: direct Quit cancels/joins owned workers; daemon Quit does not stop the daemon. A failed direct runtime cannot silently attach to another owner.
 - DESK-11: both executables dispatch bounded HID helper operations without creating a GUI; smoke mode still performs no backend/configuration/USB operations.
@@ -60,13 +70,15 @@ The first IPC tests passed against an actual uniquely named Windows pipe with fa
 
 ### Connection and deployment
 
-Existing local/example files are deliberately unchanged. Daemon mode requires its optional desktop group; an older backend or a running daemon without IPC blocks direct mode through the shared ownership guard. The app shows an explicit error instead of competing for USB. Enabling daemon IPC requires a deliberate future configuration/restart; this development task does not perform it.
+Existing local/example files are deliberately unchanged. A running foreground daemon/web server is sufficient: the desktop first tries its named pipe, then its existing web API. Only full power controls require the optional desktop IPC group. If neither transport is usable, a running owner's guard still blocks competing USB access. No Windows service install, monitor restart or configuration change is performed by this development task.
 
 Without a daemon, direct mode needs no separate service/executable. No-argument startup uses 2-second USB polling, 1-second helper timeout and 10-second staleness. Web, hardware sampling and Telegram are off. Initial power controls are off; settings saved through the desktop are restored from `%LOCALAPPDATA%\UPSmartMonitor\desktop-policy.json`. The directory is created for the current user without elevation. Direct mode uses the same protected pipe, so another desktop may attach as a client of that owner.
 
-`--config PATH` selects direct-mode settings only, loaded only when daemon connection fails. It never rewrites that file or overrides `monitoring_enabled:false`. Existing desktop policy storage is respected; otherwise the per-user path above is used. Missing/invalid explicit files and corrupt saved policies fail visibly, not via a silent default. A connected daemon supplies its own settings; the direct config is not loaded.
+After a failed pipe probe, `--web-address 127.0.0.1:PORT` overrides web discovery. Otherwise `--config PATH` supplies the web address, or discovery looks for `config.local.json` beside the executable and then in the working directory. With neither file, it tries `127.0.0.1:8080`. `web_enabled:false` skips web discovery unless an address was explicitly supplied. Discovery does not activate that file's power/Telegram/hardware settings. A connected pipe skips discovery entirely.
 
-Example additions for a console backend, **not an active configuration**:
+If both remote transports are unavailable, `--config PATH` also selects the direct-mode configuration. Omitted direct config still uses USB-only defaults rather than silently enabling settings from a discovered file. It never rewrites a file or overrides `monitoring_enabled:false`. Existing desktop policy storage is respected; otherwise the per-user path above is used. Missing/invalid chosen configs, corrupt saved policies and incompatible web snapshots fail visibly. Source choice is fixed for the session; restart the desktop to select again.
+
+Optional additions for full controls on a console backend, **not an active configuration**:
 
 ```json
 "web_enabled": false,
@@ -90,13 +102,30 @@ Build and run:
 ```powershell
 go build -o .\bin\upsmart-next.exe .\cmd\ups-daemon
 go build -ldflags "-H=windowsgui -linkmode=internal" -o .\bin\upsmart-desktop.exe .\cmd\upsmart-desktop
-# Prefer daemon; otherwise start desktop-owned, read-only USB monitoring:
+# Prefer named pipe, then web API, otherwise direct USB:
 .\bin\upsmart-desktop.exe
-# Custom direct settings (ignored while attached to a daemon):
+# Explicit configuration for web address discovery and direct fallback:
 .\bin\upsmart-desktop.exe --config .\config.local.json
+# Explicit localhost web endpoint; pipe is still preferred:
+.\bin\upsmart-desktop.exe --web-address 127.0.0.1:18765
 # Safe offline window startup test; no backend requests or controls:
 .\bin\upsmart-desktop.exe --smoke-test
 ```
+
+For the configuration beside the built executables, run a foreground daemon in
+one Command Prompt and the desktop in another; no service installation is needed:
+
+```bat
+bin\upsmart-next.exe serve --config bin\config.local.json
+```
+
+```bat
+bin\upsmart-desktop.exe
+```
+
+The desktop discovers `bin\config.local.json` and uses its web `listen` address
+when no pipe is available. Web mode displays readings, hardware, events and active
+policy/countdown, but never edits policy or sends shutdown/cancel.
 
 ### Settings and authorization boundaries
 
@@ -134,3 +163,12 @@ The backend entry was moved concurrently to `cmd/ups-daemon`; its desktop/IPC in
 - Offline validation of the unchanged local config reports PC shutdown disabled. No normal-mode launch, live USB handover, daemon restart, service installation, live Telegram or power operation was performed.
 
 Assessment: dual-mode selection/lifecycle is implemented and simulation-tested; native loading and helper dispatch are verified. Actual direct USB polling and service/direct ownership handover with the final GUI still need a separately approved live check. No automatic handover after disconnect, service takeover or new power capability is introduced. Existing visual/tray, service-account and full legacy-parity limits remain open.
+
+### Three-transport results - 2026-11-12
+
+- Implemented lazy pipe -> web -> USB selection. Web mapping uses existing `/api/v1/status`, `/api/v1/hardware` and `/api/v1/events?limit=100` GET routes without changing the server or configuration. The three cached reads are separate, not an atomic server transaction; partial fetches never publish a successful snapshot.
+- Web client accepts numeric loopback only, bypasses proxies, refuses redirects, bounds each response to 1 MiB and the whole refresh to 5 seconds. Invalid/schema-mismatched responses are explicit errors, not permission to fall through to USB.
+- UI identifies read-only web mode, retains remote policy/countdown visibility and disables shutdown/cancel regardless of remote flags. Settings explains the pipe requirement without sending a policy request. Web adapter rejects all control operations before network I/O.
+- Focused checks, three repeated control/monitor/desktop runs, full `go test .\...`, `go vet .\...` and `build.cmd` passed. Tests include actual loopback web-server/client/session round trips with fake cached state and no USB/service; selection order, race recovery, config discovery, bad responses, exact 1 MiB boundary, redirect/mutation refusal and read-only native widgets.
+- No active config edit, daemon/service restart, service installation, live USB poll, real Telegram or power operation was performed. Live desktop attachment to the user's running daemon and final direct hardware handover remain unverified. E-007 stays open.
+- Final `build.cmd`, full tests/vet and validation of the unchanged `bin/config.local.json` passed (PC shutdown disabled). Native smoke with a nonexistent config and invalid web address still opened the window and exited 0, proving smoke bypasses connection discovery. The known E-007 tray warning recurred. All 135 local README/project links resolved.

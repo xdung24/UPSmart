@@ -29,3 +29,5 @@ Expected: native window/tray initialization without readiness errors. Actual: on
 Cause is unconfirmed; a tray-initialization timing issue is possible but not established. The tray setup predates dual-mode support. No speculative fix or error suppression was made in this connection-mode change.
 
 Next: reproduce with native visual/tray interaction, distinguish smoke/startup ordering from normal-mode behavior, then fix and retest if confirmed. No claim that this observation is resolved.
+
+Retest, 2026-11-12 22:09: the final pipe/web/USB build emitted the same warning in offline smoke mode; native window startup and exit 0 still passed. No backend/configuration/USB action occurred. Recurrence is confirmed; cause and functional tray impact remain unverified, and this observation stays open.

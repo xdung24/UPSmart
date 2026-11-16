@@ -30,7 +30,7 @@ Go was confirmed by the user on 2026-11-12. The first console milestone reads re
 | F-015 | Acceptance tests, hardware safety gates and evidence requirements | P0 | Full tests/vet/build pass; race tool still blocked | [Quality](F-015-quality.md) |
 | F-016 | PC hardware monitoring: CPU/GPU usage, GPU memory and disk metrics | P2 | Collector/API candidate; PC temperatures removed by request | [Hardware monitoring](F-016-pc-hardware-monitoring.md) |
 | F-017 | Telegram alerts, authorized status/checking commands and optional summaries | P1 | Checking-only commands mock-tested; power commands removed by request | [Telegram](F-017-telegram-notifications.md) |
-| F-018 | Dual-mode Fyne desktop: daemon preferred, direct USB fallback | P1 | Tests/build/native startup pass; live handover and visual checks pending | [Desktop](F-018-native-desktop.md) |
+| F-018 | Fyne desktop: named pipe, web API or direct USB | P1 | Three transports tested/built; no service required; live handover pending | [Desktop](F-018-native-desktop.md) |
 
 P0 = monitoring foundation and safety; P1 = background operation and automation; P2 = optional hardware monitoring/control.
 

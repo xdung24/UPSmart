@@ -108,6 +108,17 @@ func TestNativeViewShowsFreshUnavailableCountdownAndBackendLoss(t *testing.T) {
 	if !ui.shutdown.Disabled() || ui.cancelBtn.Disabled() {
 		t.Fatal("pending action controls are incorrect")
 	}
+	ui.SetReadOnly(true)
+	ui.Apply(control.Snapshot{UPS: s}, nil)
+	if !ui.shutdown.Disabled() || !ui.cancelBtn.Disabled() || !strings.Contains(ui.source.Text, "Web API") {
+		t.Fatal("read-only web connection left pending controls actionable")
+	}
+	s.Policy.State = "armed"
+	ui.Apply(control.Snapshot{UPS: s}, nil)
+	if !ui.shutdown.Disabled() {
+		t.Fatal("read-only web connection enabled manual shutdown")
+	}
+	ui.settings()
 	ui.Apply(control.Snapshot{}, errors.New("disconnected"))
 	if !ui.shutdown.Disabled() || !ui.cancelBtn.Disabled() || ui.values["input_voltage"].Text != "Unavailable - backend connection lost" {
 		t.Fatal("backend loss left actionable controls or healthy data")

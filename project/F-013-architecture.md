@@ -86,3 +86,9 @@ The user selected daemon-first startup with direct USB fallback only when no dae
 `Session` owns cancellation/join only for a direct runtime. A direct runtime failure latches connection failure; existing desktop sessions never silently transfer ownership after disconnect. Native helper dispatch is shared by both executables before GUI construction, preserving process-isolated bounded HID calls. Window close hides; explicit Quit joins desktop-owned workers but never stops the service. No background child daemon is left behind.
 
 Simulation tests, full tests/vet, both Windows builds, offline native-window startup and invalid-helper rejection passed. Live final-GUI USB/SCM handover remains pending; detailed evidence and defaults are in [F-018](F-018-native-desktop.md).
+
+### Pipe, web or USB - 2026-11-12
+
+The desktop now selects a named pipe first, then an existing localhost web API, then desktop-owned USB. `monitor.Connections` lazily resolves the web client only after pipe failure. A foreground daemon is sufficient; Windows service installation is never a desktop dependency.
+
+`control.WebClient` adapts existing cached GET status/hardware/events routes to the desktop snapshot, with bounded loopback-only requests, no proxy/redirects and no mutation path. Web sessions are explicitly read-only; their UI cannot edit policy or schedule/cancel power actions even if remote policy flags are enabled. Pipe/direct control safety is unchanged. Ownership guards still precede any direct polling, and sessions never silently switch owners after a disconnect. Actual loopback API/session tests with fake state passed; no live daemon or device was restarted.

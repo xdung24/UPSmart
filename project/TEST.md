@@ -6,6 +6,8 @@ Initial monitoring tests and actual read-only USB/browser checks passed. The lat
 
 Dual-mode desktop selection/lifecycle tests, Windows builds and offline native startup/helper checks passed; final GUI live USB/handover is pending, not a bug. Evidence: [F-018](F-018-native-desktop.md).
 
+Pipe/web/USB selection, actual loopback API round trips with fake state and read-only web controls now pass tests/vet/build. Live attachment to the user's daemon remains pending; no service install is required. See [F-018](F-018-native-desktop.md).
+
 | ID | Error or observation | Status / priority | Last update | Details |
 | --- | --- | --- | --- | --- |
 | E-001 | Optional manufacturer descriptor rejected by this UPS | Fixed/verified / P1 | 2026-11-12 | [Descriptor handling](E-001-manufacturer-descriptor.md) |

@@ -89,4 +89,6 @@ No routes/methods changed. Status remains a cached read, not a policy tick or OS
 
 Desktop addition: [F-018](F-018-native-desktop.md) uses separate account-restricted named-pipe transport for `/snapshot`, `/policy`, confirmed `/shutdown` and `/cancel`. These are **not** registered on the web server; optional web-off mode starts no TCP listener. Telegram power mutation commands are removed. Tests exercise actual named-pipe framing separately from unchanged web Host/Origin/GET-only protections.
 
-Dual-mode desktop uses that same bridge in the single monitoring owner, whether daemon or desktop process. `internal/monitor` shares lifecycle/composition; direct mode adds no writable TCP endpoint or widget-triggered USB reads.
+Pipe/direct desktop uses that same bridge in the single monitoring owner, whether daemon or desktop process. `internal/monitor` shares lifecycle/composition; direct mode adds no writable TCP endpoint or widget-triggered USB reads.
+
+Web-only daemon attachment is also supported through the existing GET status, hardware and events APIs. `control.WebClient` aggregates bounded cached responses; it rejects policy/control requests locally. The desktop disables power mutations in this mode. Windows service registration and desktop IPC configuration are not required for read-only web attachment. No web routes or permissions changed.
