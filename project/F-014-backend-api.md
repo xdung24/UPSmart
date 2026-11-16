@@ -1,6 +1,16 @@
-# F-014 - Backend API and infrastructure
+# F-014 - Backend and desktop IPC
 
-Updated: 2026-11-12 | Priority: P0 | Status: Monitoring API implemented/tested
+Updated: 2026-11-16 | Priority: P0 | Status: Named-pipe desktop IPC retained; web API removed
+
+## Current desktop IPC contract - 2026-11-16
+
+The user requested removal of web support. No TCP listener, browser dashboard or web API is built or started. The former HTTP API specification and test history below are archived evidence only.
+
+The daemon exposes an account-restricted named pipe only when the `desktop` configuration group is present. `internal/control.Bridge` uses HTTP request/response framing over that local pipe; this is not a network HTTP server. The desktop first requests `GET /snapshot` and then uses `GET /policy`, `PUT /policy`, `POST /shutdown` and `POST /cancel` as needed. Pipe DACLs authorize the configured Windows account; bounded framing, request sizes, concurrency and timeouts are retained. The daemon can also run without IPC when no desktop client is needed.
+
+When no compatible daemon pipe is available, the desktop starts its shared monitoring engine directly only if exclusive USB ownership is available. Startup source is fixed for the session; connection loss does not trigger an ownership transfer. No service installation is required for either mode. Old configuration keys `listen` and `web_enabled` are no longer recognized and must be removed from existing JSON configuration.
+
+2026-11-16 validation: IPC/config/control/daemon targeted tests and the full Go suite passed; vet and both Windows builds passed. No listener or live daemon was started.
 
 ## Purpose and user journey
 

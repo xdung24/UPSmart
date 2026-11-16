@@ -20,7 +20,7 @@ func TestDirectDefaultsAndSavedPolicyUseOnlyPerUserStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.MonitoringEnabled || cfg.WebEnabled() || cfg.Hardware != nil || cfg.Telegram != nil || cfg.PowerControl != nil {
+	if !cfg.MonitoringEnabled || cfg.Hardware != nil || cfg.Telegram != nil || cfg.PowerControl != nil {
 		t.Fatal("direct defaults unexpectedly enabled optional features or disabled USB")
 	}
 	expected := filepath.Join(root, "UPSmartMonitor", "desktop-policy.json")
@@ -40,7 +40,7 @@ func TestExplicitDirectConfigurationIsNotReplacedOrRewritten(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("LOCALAPPDATA", root)
 	path := filepath.Join(root, "chosen.json")
-	const document = `{"schema_version":1,"listen":"127.0.0.1:8081","poll_interval":"3s","transaction_timeout":"1s","stale_after":"10s","monitoring_enabled":false}`
+	const document = `{"schema_version":1,"poll_interval":"3s","transaction_timeout":"1s","stale_after":"10s","monitoring_enabled":false}`
 	if err := os.WriteFile(path, []byte(document), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestExplicitDirectConfigurationIsNotReplacedOrRewritten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.MonitoringEnabled || cfg.PollInterval != "3s" || cfg.Listen != "127.0.0.1:8081" || !cfg.WebEnabled() {
+	if cfg.MonitoringEnabled || cfg.PollInterval != "3s" {
 		t.Fatal("explicit direct configuration was overridden")
 	}
 	data, err := os.ReadFile(path)
@@ -68,7 +68,7 @@ func TestExplicitDirectConfigurationIsNotReplacedOrRewritten(t *testing.T) {
 
 func TestExistingOwnerBlocksRuntimeBeforeAnyUSBOrReadiness(t *testing.T) {
 	cfg := config.Config{
-		SchemaVersion: 1, Listen: "127.0.0.1:8080", PollInterval: "2s",
+		SchemaVersion: 1, PollInterval: "2s",
 		TransactionTimeout: "1s", StaleAfter: "10s", MonitoringEnabled: true,
 	}
 	busy := errors.New("another monitor already running")

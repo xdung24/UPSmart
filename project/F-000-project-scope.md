@@ -1,20 +1,20 @@
 # F-000 - Scope and delivery
 
-Updated: 2026-11-12 | Priority: P0 | Status: Monitoring delivered; persistence/service candidate built only
+Updated: 2026-11-16 | Priority: P0 | Status: Desktop and daemon modes retained; web support removed
 
 ## Purpose and user journey
 
-Mục tiêu: thay UPSmart cũ bằng ứng dụng nền ổn định, giúp người dùng xem trạng thái UPS qua trình duyệt và chủ động cấu hình tắt máy an toàn.
+Mục tiêu: thay UPSmart cũ bằng ứng dụng Windows ổn định với giao diện desktop native; có thể tự giám sát UPS hoặc kết nối tới daemon để vận hành nền.
 
-The user installs the replacement, verifies readings against UPSmart, then optionally enables shutdown policy. The first release is monitoring-only.
+The user launches the desktop standalone or alongside a daemon. The first release is monitoring-focused; optional shutdown policy remains separately gated.
 
 ## Scope and decisions
 
-- Confirmed request: support the ARES AR2000 connected over USB on Windows, with background operation and a web server in Go or Rust.
+- Original request: support the ARES AR2000 over USB on Windows with background operation and web support. The user later requested web removal; see the current decision below.
 - Confirmed on 2026-11-12: Go. Implemented: Windows amd64 and embedded browser assets; no external database or frontend build system. The first milestone used only the standard library; the service candidate adds pinned `golang.org/x/sys/windows` APIs.
 - Confirmed on 2026-11-12: extend the plan with CPU, GPU and hard disk monitoring. The originally requested PC temperature monitoring was later explicitly removed by the user from the app and plan. Current optional PC telemetry is tracked in [F-016](F-016-pc-hardware-monitoring.md); UPS temperature is unaffected.
 - Confirmed on 2026-11-12: add Telegram messages during monitoring to the plan. Proposed alerts, optional summaries, protected credentials and delivery limitations are tracked in [F-017](F-017-telegram-notifications.md); no messages have been sent.
-- Confirmed on 2026-11-12: listen on localhost only, including future dashboard/API additions. Existing implementation restricts binding to `127.0.0.1`; Telegram is outbound only, with no public webhook.
+- Historical decision on 2026-11-12: web listeners were restricted to localhost. Superseded on 2026-11-16 when the user requested removal of web support.
 - Confirmed on 2026-11-12: desktop supports daemon-first startup or desktop-owned direct USB when no monitor owns the device. Shared-engine selection/lifecycle checks and offline native startup passed; final GUI live USB/handover remains pending in [F-018](F-018-native-desktop.md). This does not authorize deployment or live power testing.
 - No shutdown threshold, persistent retention period or LAN exposure has been approved.
 - User explicitly confirmed UPSmart was closed and approved read-only live status polling. No approval was requested or granted for changing mains, installing a service or issuing power-control commands.
@@ -34,7 +34,7 @@ Initial identification alone was not proof of protocol compatibility. Subsequent
 - SCOPE-02: no power-changing command is reachable in monitoring-only mode.
 - SCOPE-03: implementation and simulated tests precede approved live power tests.
 - Gate A: identify transport and obtain repeatable read-only responses.
-- Gate B: verify parser, stale-state behavior, dashboard, reconnect and service lifecycle.
+- Gate B: verify parser, stale-state behavior, native desktop, reconnect and service lifecycle.
 - Gate C: approve policy and validate PC shutdown; UPS output control remains separately gated.
 - Gate D: verify UPS delayed-off and restart behavior on a safe test setup, or explicitly leave the feature unavailable.
 
@@ -66,3 +66,10 @@ Next: compare stable readings with UPSmart in separate sessions, validate physic
 - Added opt-in configuration, independent workers, cached hardware API/dashboard and a live-only Telegram event sink to the shared console/SCM application. Existing configurations remain unchanged.
 - Full tests/vet/build and five repeated history/service test runs passed. PC-only read checks verified CPU/GPU utilization, GPU memory and disk/volume inventory/space; sensor/provider limitations are documented in [F-016](F-016-pc-hardware-monitoring.md).
 - No live Telegram traffic, active configuration edits, monitor replacement/restart, elevated service installation or power-changing operation was performed. Real Telegram setup, periodic-summary cadence and LocalService integration remain pending. The temperature-provider work considered at this milestone was subsequently removed from scope by the user.
+
+### Desktop-only interface decision - 2026-11-16
+
+- The user requested: "Revemo the web support. I only need the desktop app. Desktop app will run as stand alone or together with the daemon, depend on the setup."
+- Removed the TCP dashboard/API and browser assets. The desktop now selects a configured daemon through account-restricted named-pipe IPC, or starts the shared monitor directly when no other process owns the UPS. No web fallback or automatic ownership transfer remains.
+- `listen` and `web_enabled` are no longer supported configuration fields; existing JSON must remove them. A daemon requires its `desktop` configuration group to expose the named pipe. Windows service installation remains optional.
+- Existing live browser/API evidence is historical and does not describe the current product. Verification of this source/configuration change is recorded in [F-018](F-018-native-desktop.md) and [F-015](F-015-quality.md).

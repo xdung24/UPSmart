@@ -52,7 +52,6 @@ type UI struct {
 	lights    map[string]*canvas.Circle
 	flow      *widget.Label
 	last      control.Snapshot
-	readOnly  bool
 	started   time.Time
 }
 
@@ -118,7 +117,7 @@ func New(app fyne.App, api API) *UI {
 		widget.NewToolbarAction(theme.HistoryIcon(), func() { u.tabs.SelectIndex(2) }),
 		widget.NewToolbarSpacer(),
 		widget.NewToolbarAction(theme.InfoIcon(), func() {
-			dialog.ShowInformation("About UPSmart Monitor", "Independent ARES AR2000 monitor\nFyne desktop / shared Go monitoring engine\nDaemon preferred; direct USB only with exclusive ownership\nDesktop controls: local Windows account only\nWeb and Telegram: read-only\nNo PC hardware temperature monitoring.", u.Window)
+			dialog.ShowInformation("About UPSmart Monitor", "Independent ARES AR2000 monitor\nFyne desktop / shared Go monitoring engine\nDaemon preferred; direct USB only with exclusive ownership\nDesktop controls: local Windows account only\nTelegram: checking commands and notifications only\nNo PC hardware temperature monitoring.", u.Window)
 		}))
 	header := container.NewVBox(widget.NewLabelWithStyle("UPSmart Monitor", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), toolbar, u.source, u.status, u.power)
 	u.Window.SetContent(container.NewBorder(header, u.footer, nil, nil, u.tabs))
@@ -161,17 +160,6 @@ func (u *UI) SetDirect(direct bool) {
 	} else {
 		u.source.SetText("Connection source: Daemon / existing monitor (local named pipe)")
 		u.footer.SetText("Closing hides to the tray. Quit exits only this desktop; daemon monitoring continues.")
-	}
-}
-
-func (u *UI) SetReadOnly(readOnly bool) {
-	u.readOnly = readOnly
-	if readOnly {
-		u.source.SetText("Connection source: Web API (read-only)")
-		u.source.Wrapping = fyne.TextWrapWord
-		u.footer.SetText("Web connection: power controls/settings require the named pipe. Quit exits only this desktop; daemon monitoring continues.")
-		u.shutdown.Disable()
-		u.cancelBtn.Disable()
 	}
 }
 
@@ -313,10 +301,10 @@ func (u *UI) Apply(snapshot control.Snapshot, err error) {
 	terminal := s.Policy.State == "requested" || s.Policy.State == "failed" || s.Policy.State == "dry_run"
 	u.shutdown.Disable()
 	u.cancelBtn.Disable()
-	if !u.readOnly && s.Policy.ManualEnabled && s.Policy.State != "pending" && !terminal {
+	if s.Policy.ManualEnabled && s.Policy.State != "pending" && !terminal {
 		u.shutdown.Enable()
 	}
-	if !u.readOnly && s.Policy.State == "pending" {
+	if s.Policy.State == "pending" {
 		u.cancelBtn.Enable()
 	}
 	var events strings.Builder
@@ -417,10 +405,6 @@ func (u *UI) confirmShutdown() {
 }
 
 func (u *UI) settings() {
-	if u.readOnly {
-		dialog.ShowInformation("Read-only web connection", "Policy editing and power controls require the protected local named pipe. The daemon may run as a normal executable; a Windows service is not required.", u.Window)
-		return
-	}
 	go func() {
 		var value control.PolicySettings
 		err := u.api.Request(u.ctx, http.MethodGet, "/policy", nil, &value)
@@ -467,7 +451,7 @@ func (u *UI) policyForm(settings control.PolicySettings) {
 		widget.NewFormItem("", automatic), widget.NewFormItem("Outage duration", outage),
 		widget.NewFormItem("", low), widget.NewFormItem("Automatic countdown", autoCountdown),
 		widget.NewFormItem("", manual), widget.NewFormItem("Desktop countdown", manualCountdown),
-		widget.NewFormItem("Other settings", widget.NewLabel("USB, hardware and Telegram setup remain in backend configuration.\nWeb/Telegram are read-only. Pending/terminal policy cannot be reset here.")),
+		widget.NewFormItem("Other settings", widget.NewLabel("USB, hardware and Telegram setup remain in backend configuration.\nTelegram commands are checking-only. Pending/terminal policy cannot be reset here.")),
 	}
 	form := dialog.NewForm("PC shutdown policy", "Save policy", "Cancel", items, func(save bool) {
 		if !save {

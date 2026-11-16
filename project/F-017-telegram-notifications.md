@@ -1,10 +1,10 @@
 # F-017 - Telegram notifications
 
-Updated: 2026-11-12 | Priority: P1 | Status: Event sender and authorized checking-only commands tested; no live delivery
+Updated: 2026-11-16 | Priority: P1 | Status: Event sender and authorized checking-only commands tested; no live delivery
 
 ## Current scope: checking only
 
-The user selected a primary Fyne desktop, optional read-only web and Telegram checking/notifications. This supersedes the earlier shutdown-command section below: `/shutdown`, `/confirm` and `/cancel` no longer call any policy action and reply that controls are desktop-only.
+The user selected a primary Fyne desktop and Telegram checking/notifications, then removed web support on 2026-11-16. This supersedes the earlier shutdown-command section below: `/shutdown`, `/confirm` and `/cancel` no longer call any policy action and reply that controls are desktop-only.
 
 Optional `telegram.allowed_user_ids` (1-16 positive unique sender IDs) enables outbound command polling independently of `power_control.manual`; numeric `chat_id` plus sender allowlist are required. Omission retains notification-only behavior. `/status`, `/ups` and `/battery` return cached UPS/policy information; `/hardware` returns bounded cached hardware information; `/help` explains this readonly boundary. Exact commands without `@botname` are supported.
 
@@ -12,9 +12,9 @@ Authentication, age/backlog/replay/forward/bot-source protections, fixed HTTPS r
 
 ## Purpose and user journey
 
-Mục tiêu: nhận tin nhắn Telegram về trạng thái giám sát, mất điện và sự cố mà không cần mở dashboard; tránh gửi lặp hoặc lộ thông tin bí mật.
+Mục tiêu: nhận tin nhắn Telegram về trạng thái giám sát, mất điện và sự cố mà không cần mở desktop; tránh gửi lặp hoặc lộ thông tin bí mật.
 
-The user configures their Telegram bot and destination locally, enables selected notifications, and explicitly requests a test message. During monitoring, selected events are sent in the background. The dashboard shows delivery health separately from UPS health.
+The user configures their Telegram bot and destination locally, enables selected notifications, and explicitly requests a test message. During monitoring, selected events are sent in the background. The desktop shows delivery health separately from UPS health.
 
 ## Requested scope and proposed notifications
 
@@ -35,7 +35,7 @@ Do not send every polling sample. Include event time, a user-chosen device label
 - Use Telegram's HTTPS Bot API through a bounded HTTP client. Disable redirects so credential-bearing requests cannot be redirected to another host; preserve TLS certificate validation.
 - Add opt-in validated settings through [F-008](F-008-configuration.md): enabled state, destination, selected event types, optional summary interval and a protected token reference. Defaults remain disabled.
 - Choose secret storage compatible with both console and LocalService execution before implementation. Do not put bot tokens in source control, examples, browser APIs, diagnostic URLs or logs. Current deployment configuration is readable by local Users and is not suitable for storing the token itself.
-- Enabled notifications transmit selected monitoring data to Telegram. The user subsequently selected authenticated shutdown commands over outbound bot polling, detailed below. No public webhook or LAN dashboard exposure is included.
+- Enabled notifications transmit selected monitoring data to Telegram. The user subsequently selected authenticated shutdown commands over outbound bot polling, detailed below. No public webhook or LAN listener is included.
 - Deduplicate by live event identity, suppress unchanged repeated failures, and bound message size and send rate. Recovered history must not be automatically resent as new alerts.
 - Retry transient network/server failures with bounded backoff; respect Telegram rate-limit guidance. Authentication/destination failures need explicit actionable diagnostics, not endless retries.
 - Report queue overflow, exhausted retries and last successful API acceptance separately. API acceptance is not proof a person received/read the message; retries after an ambiguous timeout may produce duplicates.

@@ -1,12 +1,12 @@
 # F-006 - Windows service
 
-Updated: 2026-11-12 | Priority: P1 | Status: Candidate implemented; actual SCM installation unverified
+Updated: 2026-11-16 | Priority: P1 | Status: Candidate implemented; actual SCM installation unverified
 
 ## Purpose and user journey
 
 Mục tiêu: giám sát UPS từ lúc khởi động Windows, không cần đăng nhập hoặc giữ cửa sổ chương trình mở.
 
-An administrator installs the service once. Normal monitoring starts automatically; the dashboard explains any missing-device or permission error.
+An administrator installs the service once. Normal monitoring starts automatically; the native desktop explains any missing-device or permission error.
 
 ## Implementation
 
@@ -17,13 +17,13 @@ An administrator installs the service once. Normal monitoring starts automatical
 - Enforce one active poller across service and console mode using a restricted named mutex. Report an already-running instance clearly.
 - Use absolute executable/configuration paths; quote the registered service executable path and never rely on the current working directory.
 - Select the least-privileged service identity after verifying HID access. Add shutdown privilege only when the enabled policy requires it; do not assume LocalSystem is necessary.
-- Read configuration before starting workers. Invalid configuration or HTTP bind failure is an explicit startup failure; missing hardware may run in degraded mode with retries.
-- Proposed orderly stop budget: 10 seconds, with SCM progress reporting. Stop polling, cancel I/O, close HTTP and flush bounded event output. Stopping/uninstalling must never issue PC or UPS shutdown.
+- Read configuration before starting workers. Invalid configuration or named-pipe setup failure is an explicit startup failure; missing hardware may run in degraded mode with retries.
+- Proposed orderly stop budget: 10 seconds, with SCM progress reporting. Stop polling, cancel I/O, close desktop IPC and flush bounded event output. Stopping/uninstalling must never issue PC or UPS shutdown.
 - Configure bounded SCM restart recovery for process crashes, not normal stops; no broad panic recovery that presents a healthy service.
 
 ## Acceptance and tests
 
-- SVC-01: service starts without user login and serves loopback status.
+- SVC-01: service starts without user login and supports the configured desktop IPC when enabled.
 - SVC-02: console/service duplication is rejected without disturbing the owner.
 - SVC-03: install/uninstall reports permission failures and preserves user configuration/history unless explicitly requested otherwise.
 - SVC-04: stop during blocked device access completes within the verified stop budget.
@@ -31,7 +31,7 @@ An administrator installs the service once. Normal monitoring starts automatical
 
 ## Decisions and boundaries
 
-Depends on [F-005](F-005-connection-resilience.md), [F-008](F-008-configuration.md) and [F-011](F-011-web-access-safety.md). Exact account and Windows version support need verification. Installation and service registration modify Windows and require explicit user approval.
+Depends on [F-005](F-005-connection-resilience.md), [F-008](F-008-configuration.md) and [F-018](F-018-native-desktop.md) for optional desktop IPC. Exact account and Windows version support need verification. Installation and service registration modify Windows and require explicit user approval.
 
 ## Results and next steps
 
@@ -44,7 +44,7 @@ Persistence/service candidate adds `internal/service/handler_windows.go`, `manag
 - Fixed paths: `%ProgramFiles%\UPSmartMonitor\upsmart-monitor.exe`, `%ProgramData%\UPSmartMonitor\config.json`, and the latter directory's `logs` child. These isolate deployment from the legacy ARES application.
 - Executable/configuration directories and files use Administrator ownership and protected ACLs: SYSTEM/Administrators full access; LocalService and local Users read/execute only. Only the logs directory grants LocalService full access. Unexpected existing ownership/ACLs or reparse points are rejected, not changed implicitly.
 - Registration uses a quoted absolute command, delayed automatic startup, crash restart after 5 seconds and 30 seconds, then no further action until the failure count resets after one day. Normal/non-crash service failures do not trigger recovery loops.
-- Handler publishes StartPending/Running/StopPending, accepts stop/shutdown, reports progress, and enforces 10-second startup/stop budgets. Application cleanup shares an 8-second HTTP/journal budget. No PC or UPS power command exists.
+- Handler publishes StartPending/Running/StopPending, accepts stop/shutdown, reports progress, and enforces 10-second startup/stop budgets. Application cleanup shares an 8-second IPC/journal budget. No PC or UPS power command exists.
 - `service start/stop/status/uninstall` validates the registered command before managing it. Stop/start waits are bounded to 15 seconds. Uninstall requires an already-stopped service and preserves binary/configuration/history.
 - Startup/configuration and runtime diagnostics go to Windows Application Event Log. Configuration or bind failures never report Running.
 - Existing configuration is preserved: installation rejects differing settings rather than overwriting them. A failed install reports errors and may leave protected deployment files for inspection; it does not recursively delete data.
@@ -67,7 +67,7 @@ Assessment: implementation and handler-level verification only. The session has 
 
 ### Optional worker integration - 2026-11-12
 
-The shared console/SCM application now starts optional hardware sampling and Telegram delivery workers with coordinated cancellation. Both groups are validated before acquiring hardware ownership or opening the listener. Invalid/missing enabled Telegram credentials fail startup explicitly; disabled optional groups preserve previous behavior.
+The shared console/SCM application now starts optional hardware sampling and Telegram delivery workers with coordinated cancellation. Both groups are validated before acquiring hardware ownership or opening desktop IPC. Invalid/missing enabled Telegram credentials fail startup explicitly; disabled optional groups preserve previous behavior.
 
 Existing handler/deployment tests and event/service regressions passed, including five repeated runs. This is not an elevated SCM or LocalService integration test. Telegram environment provisioning, PC metric-provider permissions and actual combined service shutdown timing remain unverified; no service registration or active configuration was changed.
 

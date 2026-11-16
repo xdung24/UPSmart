@@ -20,7 +20,6 @@ import (
 	"upsmart/internal/policy"
 	"upsmart/internal/state"
 	"upsmart/internal/ups"
-	"upsmart/internal/web"
 )
 
 func Run(parent context.Context, cfg config.Config, worker ups.Worker, ready func()) error {
@@ -61,14 +60,6 @@ func run(parent context.Context, cfg config.Config, worker ups.Worker, ready fun
 		if err := ups.CheckLegacy(); err != nil {
 			return err
 		}
-	}
-	var listener net.Listener
-	if cfg.WebEnabled() {
-		listener, err = net.Listen("tcp4", cfg.Listen)
-		if err != nil {
-			return fmt.Errorf("bind local dashboard: %w", err)
-		}
-		defer listener.Close()
 	}
 	var pipeListener net.Listener
 	if cfg.Desktop != nil {
@@ -145,7 +136,6 @@ func run(parent context.Context, cfg config.Config, worker ups.Worker, ready fun
 	if cfg.Hardware != nil {
 		store.EnableHardware(hardwareInterval)
 	}
-	server := web.NewServer(cfg.Listen, store)
 	var pipeServer *http.Server
 	if cfg.Desktop != nil {
 		bridge := control.NewBridge(store, controller, func(options policy.Options) error {
@@ -197,13 +187,10 @@ func run(parent context.Context, cfg config.Config, worker ups.Worker, ready fun
 			}, poll, timeout)
 		})
 	}
-	log.Printf("Monitoring: %t; web enabled: %t (%s); desktop IPC: %t; PC shutdown: %s; UPS output control unavailable", cfg.MonitoringEnabled, cfg.WebEnabled(), cfg.Listen, cfg.Desktop != nil, shutdownMode(cfg))
-	httpDone := make(chan error, 2)
-	if listener != nil {
-		go func() { httpDone <- server.Serve(listener) }()
-	}
+	log.Printf("Monitoring: %t; desktop IPC: %t; PC shutdown: %s; UPS output control unavailable", cfg.MonitoringEnabled, cfg.Desktop != nil, shutdownMode(cfg))
+	serveDone := make(chan error, 1)
 	if pipeServer != nil {
-		go func() { httpDone <- pipeServer.Serve(pipeListener) }()
+		go func() { serveDone <- pipeServer.Serve(pipeListener) }()
 	}
 	if ready != nil {
 		ready()
@@ -211,20 +198,16 @@ func run(parent context.Context, cfg config.Config, worker ups.Worker, ready fun
 	var serveErr error
 	select {
 	case <-ctx.Done():
-	case serveErr = <-httpDone:
+	case serveErr = <-serveDone:
 	}
 	cancel()
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer shutdownCancel()
-	shutdownErr := server.Shutdown(shutdownCtx)
+	var shutdownErr error
 	if pipeServer != nil {
-		if err := pipeServer.Shutdown(shutdownCtx); err != nil {
-			shutdownErr = errors.Join(shutdownErr, err, pipeServer.Close())
-		}
-	}
-	if shutdownErr != nil {
-		if err := server.Close(); err != nil {
-			log.Printf("close HTTP server: %v", err)
+		shutdownErr = pipeServer.Shutdown(shutdownCtx)
+		if shutdownErr != nil {
+			shutdownErr = errors.Join(shutdownErr, pipeServer.Close())
 		}
 	}
 	workers.Wait()
@@ -234,7 +217,7 @@ func run(parent context.Context, cfg config.Config, worker ups.Worker, ready fun
 		journalErr = journal.Close(shutdownCtx)
 	}
 	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-		return errors.Join(fmt.Errorf("HTTP server: %w", serveErr), shutdownErr, journalErr)
+		return errors.Join(fmt.Errorf("desktop IPC server: %w", serveErr), shutdownErr, journalErr)
 	}
 	return errors.Join(shutdownErr, journalErr)
 }

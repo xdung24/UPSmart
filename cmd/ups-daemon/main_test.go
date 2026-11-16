@@ -13,20 +13,12 @@ import (
 	"upsmart/internal/ups"
 )
 
-const launchConfiguration = `{"schema_version":1,"listen":"127.0.0.1:8080","poll_interval":"2s","transaction_timeout":"1s","stale_after":"10s","monitoring_enabled":false}`
-
-func TestServeRejectsUnsafeBindingBeforeStarting(t *testing.T) {
-	cfg := config.Config{SchemaVersion: 1, Listen: "0.0.0.0:8080", PollInterval: "2s", TransactionTimeout: "1s", StaleAfter: "10s"}
-	err := serve(context.Background(), cfg, ups.Worker{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "127.0.0.1") {
-		t.Fatalf("unsafe binding was not rejected before startup: %v", err)
-	}
-}
+const launchConfiguration = `{"schema_version":1,"poll_interval":"2s","transaction_timeout":"1s","stale_after":"10s","monitoring_enabled":false}`
 
 func TestServeReportsMissingTelegramTokenBeforeStarting(t *testing.T) {
 	t.Setenv("UPSMART_TEST_MISSING_TOKEN", "")
 	cfg := config.Config{
-		SchemaVersion: 1, Listen: "127.0.0.1:8080", PollInterval: "2s",
+		SchemaVersion: 1, PollInterval: "2s",
 		TransactionTimeout: "1s", StaleAfter: "10s",
 		Telegram: &notifications.Options{TokenEnv: "UPSMART_TEST_MISSING_TOKEN", ChatID: "12345", Events: []string{"startup"}},
 	}
@@ -45,7 +37,7 @@ func TestNoArgumentsStartsMonitorWithLocalConfiguration(t *testing.T) {
 	finished := errors.New("test monitor finished")
 	err := runWithMonitor(nil, func(_ context.Context, cfg config.Config, _ ups.Worker, ready func()) error {
 		called++
-		if cfg.Listen != "127.0.0.1:8080" || ready != nil {
+		if cfg.MonitoringEnabled || ready != nil {
 			t.Fatal("default launch did not select the local console configuration")
 		}
 		return finished

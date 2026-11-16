@@ -1,6 +1,10 @@
 # F-011 - Web access safety
 
-Updated: 2026-11-12 | Priority: P0 | Status: Web tests pass; deployment protection implemented but not installed
+Updated: 2026-11-16 | Priority: P0 | Status: Web support removed at user request; desktop IPC ACLs remain in F-018
+
+## Current disposition - 2026-11-16
+
+The user requested removal of web support. There is no TCP listener, dashboard, web API or browser access to protect. The historical web-specific design and verification below are retained as dated evidence only. The daemon's account-restricted named pipe remains the desktop control boundary; see [F-018](F-018-native-desktop.md).
 
 ## Purpose and user journey
 

@@ -16,12 +16,10 @@ type Client interface {
 
 type Connections struct {
 	Pipe Client
-	Web  func() (Client, error)
 }
 
 type Session struct {
 	client Client
-	web    bool
 	cancel context.CancelFunc
 	done   chan struct{}
 	err    error
@@ -32,16 +30,14 @@ func Connect(ctx context.Context, connections Connections, start func(context.Co
 	probe := func(client Client) (bool, error) {
 		var snapshot control.Snapshot
 		if err := client.Request(ctx, http.MethodGet, "/snapshot", nil, &snapshot); err != nil {
-			return errors.Is(err, control.ErrInvalidWebResponse), err
+			return false, err
 		}
 		if snapshot.UPS.SchemaVersion != 1 {
 			return true, fmt.Errorf("unsupported monitor snapshot schema %d", snapshot.UPS.SchemaVersion)
 		}
 		return true, nil
 	}
-	unavailable := errors.New("no daemon transport available")
-	var web Client
-	resolved := false
+	unavailable := errors.New("daemon named pipe unavailable")
 	find := func() (*Session, error) {
 		reachable, pipeErr := probe(connections.Pipe)
 		if reachable {
@@ -52,24 +48,6 @@ func Connect(ctx context.Context, connections Connections, start func(context.Co
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
-		}
-		if !resolved && connections.Web != nil {
-			var err error
-			web, err = connections.Web()
-			if err != nil {
-				return nil, err
-			}
-			resolved = true
-		}
-		if web != nil {
-			reachable, webErr := probe(web)
-			if reachable {
-				if webErr != nil {
-					return nil, webErr
-				}
-				return &Session{client: web, web: true}, nil
-			}
-			pipeErr = errors.Join(pipeErr, webErr)
 		}
 		return nil, fmt.Errorf("%w: %w", unavailable, pipeErr)
 	}
@@ -115,8 +93,6 @@ func Connect(ctx context.Context, connections Connections, start func(context.Co
 }
 
 func (s *Session) Direct() bool { return s.done != nil }
-
-func (s *Session) ReadOnly() bool { return s.web }
 
 func (s *Session) Request(ctx context.Context, method, path string, body io.Reader, result any) error {
 	if s.done != nil {

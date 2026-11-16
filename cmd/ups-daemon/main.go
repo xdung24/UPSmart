@@ -57,10 +57,10 @@ Usage:
   upsmart service uninstall            Remove stopped service; preserve data
   upsmart --help                       Show this help
 
-Desktop UI: automatically tries named pipe, localhost web API, then direct USB.
+Desktop UI: automatically tries the daemon named pipe, then direct USB.
 The daemon can run with "serve"; no installed Windows service is required.
 Quitting stops only desktop-owned monitoring, never a daemon.
-The web API stays read-only; desktop power controls require the named pipe.
+Configure "desktop" IPC in the daemon configuration for desktop controls.
 
 With no arguments, config.local.json is resolved from the current directory.
 Use "serve --config PATH" for another location. Missing or invalid configuration

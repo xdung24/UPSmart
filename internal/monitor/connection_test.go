@@ -5,14 +5,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"upsmart/internal/control"
-	"upsmart/internal/state"
-	"upsmart/internal/web"
 )
 
 type fakeClient struct {
@@ -35,10 +31,7 @@ func (c *fakeClient) Request(_ context.Context, method, path string, _ io.Reader
 
 func TestDaemonConnectionNeverStartsDirectMonitor(t *testing.T) {
 	client := &fakeClient{schema: 1}
-	session, err := Connect(context.Background(), Connections{Pipe: client, Web: func() (Client, error) {
-		t.Error("pipe connection unnecessarily loaded web configuration")
-		return nil, errors.New("must not load")
-	}}, func(context.Context, func()) error {
+	session, err := Connect(context.Background(), Connections{Pipe: client}, func(context.Context, func()) error {
 		t.Error("daemon connection attempted to start a direct monitor")
 		return errors.New("must not start")
 	})
@@ -192,93 +185,9 @@ func TestQuitPreservesCleanupFailureAlongsideCancellation(t *testing.T) {
 	}
 }
 
-func TestWebConnectionWinsWithoutStartingUSB(t *testing.T) {
-	server := httptest.NewUnstartedServer(nil)
-	address := server.Listener.Addr().String()
-	server.Config.Handler = web.NewServer(address, state.New(10*time.Second, false)).Handler
-	server.Start()
-	defer server.Close()
-	client, err := control.NewWebClient(address)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-	session, err := Connect(context.Background(), Connections{
-		Pipe: &fakeClient{fail: 1},
-		Web:  func() (Client, error) { return client, nil },
-	}, func(context.Context, func()) error {
-		t.Error("available web API triggered USB startup")
-		return errors.New("must not start")
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if session.Direct() || !session.ReadOnly() {
-		t.Fatal("web connection not marked read-only")
-	}
-	var snapshot control.Snapshot
-	if err := session.Request(context.Background(), http.MethodGet, "/snapshot", nil, &snapshot); err != nil ||
-		snapshot.UPS.Connection.State != "disabled" || snapshot.Hardware.Mode != "disabled" || len(snapshot.Events.Items) == 0 {
-		t.Fatal("session did not use web transport:", err)
-	}
-}
-
-func TestIncompatibleWebAPIStopsSelectionBeforeUSB(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"schema_version":2}`))
-	}))
-	defer server.Close()
-	client, err := control.NewWebClient(strings.TrimPrefix(server.URL, "http://"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-	_, err = Connect(context.Background(), Connections{
-		Pipe: &fakeClient{fail: 1}, Web: func() (Client, error) { return client, nil },
-	}, func(context.Context, func()) error {
-		t.Error("incompatible web response silently enabled USB")
-		return nil
-	})
-	if !errors.Is(err, control.ErrInvalidWebResponse) {
-		t.Fatal("web incompatibility was hidden:", err)
-	}
-}
-
-func TestWebStartupRaceAndInvalidDiscovery(t *testing.T) {
-	t.Run("web daemon wins startup race", func(t *testing.T) {
-		resolutions := 0
-		session, err := Connect(context.Background(), Connections{
-			Pipe: &fakeClient{fail: 2},
-			Web: func() (Client, error) {
-				resolutions++
-				return &fakeClient{fail: 1, schema: 1}, nil
-			},
-		}, func(context.Context, func()) error { return errors.New("daemon owns USB") })
-		if err != nil || !session.ReadOnly() || session.Direct() || resolutions != 1 {
-			t.Fatal("web startup race did not preserve daemon ownership:", err)
-		}
-	})
-	t.Run("invalid discovery config is not silently replaced", func(t *testing.T) {
-		invalid := errors.New("invalid web discovery configuration")
-		_, err := Connect(context.Background(), Connections{
-			Pipe: &fakeClient{fail: 1},
-			Web:  func() (Client, error) { return nil, invalid },
-		}, func(context.Context, func()) error {
-			t.Error("invalid configuration silently enabled USB")
-			return nil
-		})
-		if !errors.Is(err, invalid) {
-			t.Fatal("discovery error lost:", err)
-		}
-	})
-}
-
-func TestBothTransportsUnavailableStartDirectExactlyOnce(t *testing.T) {
+func TestDaemonPipeUnavailableStartsDirectExactlyOnce(t *testing.T) {
 	calls := 0
-	session, err := Connect(context.Background(), Connections{
-		Pipe: &fakeClient{fail: 1},
-		Web:  func() (Client, error) { return &fakeClient{fail: 1}, nil },
-	}, func(ctx context.Context, ready func()) error {
+	session, err := Connect(context.Background(), Connections{Pipe: &fakeClient{fail: 1}}, func(ctx context.Context, ready func()) error {
 		calls++
 		ready()
 		<-ctx.Done()
@@ -288,7 +197,7 @@ func TestBothTransportsUnavailableStartDirectExactlyOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer session.Close()
-	if !session.Direct() || session.ReadOnly() || calls != 1 {
-		t.Fatal("unavailable remote transports did not select one owned runtime")
+	if !session.Direct() || calls != 1 {
+		t.Fatal("unavailable daemon pipe did not select one owned runtime")
 	}
 }

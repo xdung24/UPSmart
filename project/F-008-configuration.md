@@ -1,22 +1,22 @@
 # F-008 - Configuration
 
-Updated: 2026-11-12 | Priority: P1 | Status: Shutdown/history/hardware/Telegram schema tested; local file unchanged
+Updated: 2026-11-16 | Priority: P1 | Status: Desktop configuration tested; local file unchanged
 
-Current desktop migration: [F-018](F-018-native-desktop.md) adds explicit `desktop` local IPC/settings and optional `web_enabled` (omission keeps the web). Manual shutdown now requires desktop configuration, not Telegram. `telegram.allowed_user_ids` independently enables checking-only commands. Earlier Telegram-power examples below are historical and must not be used to activate current desktop controls.
+Current desktop configuration: [F-018](F-018-native-desktop.md) uses the explicit `desktop` group for local IPC/settings. Web support was removed on 2026-11-16; `listen` and `web_enabled` are rejected as unknown legacy fields and must be deleted from existing JSON. Manual shutdown requires desktop configuration, not Telegram. `telegram.allowed_user_ids` independently enables checking-only commands. Earlier Telegram-power examples below are historical and must not be used to activate current desktop controls.
 
 ## Purpose and user journey
 
 Mục tiêu: người dùng biết chính xác chính sách đang áp dụng và không vô tình bật tắt nguồn vì cấu hình lỗi.
 
-An administrator edits a local configuration, validates it with the CLI, then restarts the service. The dashboard shows effective settings without exposing secrets.
+An administrator edits a local configuration, validates it with the CLI, then restarts the daemon. The desktop shows monitoring and effective policy without exposing secrets.
 
 ## Implementation
 
 - Proposed entry points: `internal/config/config.go`, `internal/config/validate.go`.
 - Versioned JSON. No-argument startup uses `.\config.local.json` from the current directory, as explicitly requested by the user. Explicit `serve`/`validate` without `--config` use `%ProgramData%\UPSmartMonitor\config.json`, matching protected service deployment. Explicit `--config` selects another file. No invalid/missing-file fallback is performed. The earlier proposed `UPSmart` directory was never installed by this project.
-- Groups: device selector, polling/deadline/staleness, loopback HTTP address, event limits, PC shutdown policy and separately gated UPS output policy.
+- Groups: device selector, polling/deadline/staleness, event limits, desktop IPC/settings, PC shutdown policy and separately gated UPS output policy.
 - All automation defaults to disabled. A missing production configuration is a startup error with instructions to generate a monitoring-only example; never silently replace a broken file with defaults.
-- Reject unknown fields, unsupported schema versions, invalid durations, invalid percentages, non-loopback binds and unsupported enabled capabilities.
+- Reject unknown fields, unsupported schema versions, invalid durations, invalid percentages and unsupported enabled capabilities.
 - Require positive bounded intervals, transaction deadline below poll interval and stale threshold greater than poll interval plus deadline.
 - CLI validation reports field-specific errors and exits nonzero; generation never overwrites an existing file without explicit approval.
 - Initial version has no hot reload or browser editing. Activation requires restart; display the effective configuration version and policy.
@@ -29,7 +29,7 @@ An administrator edits a local configuration, validates it with the CLI, then re
 - CFG-02: corrupt JSON, typo fields, invalid timing relationships and non-loopback addresses fail explicitly.
 - CFG-03: enabled output control without a verified capability is rejected.
 - CFG-04: an unprivileged user cannot modify the service policy.
-- CFG-05: editing the file alone does not change a running policy; restart and the dashboard reflect the new active configuration.
+- CFG-05: editing the file alone does not change a running policy; restart and the desktop reflect the new active configuration.
 
 ## Decisions and boundaries
 
@@ -37,11 +37,11 @@ Go is confirmed. Retention and shutdown timing are explicitly configurable; no a
 
 ## Results and next steps
 
-2026-11-12: implemented `internal/config/config.go`. Current schema has `schema_version`, `listen`, `poll_interval`, `transaction_timeout`, `stale_after` and `monitoring_enabled`. No power-policy or writable web settings exist; unknown keys, including attempted shutdown options, are rejected.
+2026-11-12: implemented `internal/config/config.go`. The original schema included `listen`; the current schema no longer has web/listener fields. Unknown keys, including the removed `listen` and `web_enabled` fields, are rejected.
 
-Bounds: schema version 1; IPv4 `127.0.0.1` with port 1-65535; poll 1 second-1 minute; transaction timeout 100 ms-30 seconds and less than poll interval; stale 1 second-5 minutes and greater than poll + timeout. Files over 64 KiB, trailing JSON and invalid timing relationships fail explicitly. No hot reload.
+Bounds: schema version 1; poll 1 second-1 minute; transaction timeout 100 ms-30 seconds and less than poll interval; stale 1 second-5 minutes and greater than poll + timeout. Files over 64 KiB, trailing JSON and invalid timing relationships fail explicitly. No hot reload.
 
-Tests passed for valid monitoring-disabled configuration, unknown fields, LAN bind, wrong version, invalid timing, trailing data and malformed JSON. Both example/local files passed CLI validation.
+Historical tests covered the original loopback binding. Current tests cover valid monitoring-disabled configuration, unknown/removed web fields, wrong version, invalid timing, trailing data and malformed JSON. The example configuration is validated; local configuration is left unchanged.
 
 The repository example disables monitoring. The ignored local file enables monitoring only after the user's read-only handover approval and uses port 18765 because 8080 is occupied. No ProgramData configuration or ACLs were installed.
 
@@ -130,7 +130,7 @@ Config tests passed for explicit dry-run/live mode, monitoring dependency, manda
 
 ### Desktop configuration candidate - 2026-11-12
 
-`desktop.settings_file` is an explicit absolute local JSON path; its parent must exist and be writable to the backend account. Console mode can authorize its own Windows SID; services require explicit `desktop.user_sid` and the protected service settings path described in F-018. `web_enabled:false` requires desktop IPC; otherwise at least one usable UI transport remains configured.
+`desktop.settings_file` is an explicit absolute local JSON path; its parent must exist and be writable to the backend account. Console mode can authorize its own Windows SID; services require explicit `desktop.user_sid` and the protected service settings path described in F-018. When this group is configured, the daemon exposes the named pipe to the authorized desktop account.
 
 Saved desktop policy overrides base `power_control` only when the desktop group is explicitly present. `Config.Effective` is shared by file load/CLI validation and runtime startup, so a saved LIVE policy cannot be reported as disabled by validating only the base file. Invalid/corrupted/oversized saved policy fails explicitly. Automatic monitoring dependencies are checked again after loading/saving.
 

@@ -11,7 +11,7 @@ import (
 
 func TestEffectiveSavedPolicyIsValidatedAndNeverHiddenByBaseConfiguration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "policy.json")
-	cfg := Config{SchemaVersion: 1, Listen: "127.0.0.1:8080", PollInterval: "2s", TransactionTimeout: "1s", StaleAfter: "10s",
+	cfg := Config{SchemaVersion: 1, PollInterval: "2s", TransactionTimeout: "1s", StaleAfter: "10s",
 		Desktop: &control.Options{SettingsFile: path}}
 	settings := policy.Options{Mode: "live", Manual: &policy.ManualOptions{Enabled: true, Countdown: "30s"}}
 	if err := control.SavePolicy(path, settings); err != nil {

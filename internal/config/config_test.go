@@ -10,19 +10,20 @@ import (
 	"upsmart/internal/events"
 )
 
-const validConfig = `{"schema_version":1,"listen":"127.0.0.1:8080","poll_interval":"2s","transaction_timeout":"1s","stale_after":"10s","monitoring_enabled":false}`
+const validConfig = `{"schema_version":1,"poll_interval":"2s","transaction_timeout":"1s","stale_after":"10s","monitoring_enabled":false}`
 
 func TestLoadConfig(t *testing.T) {
 	for name, text := range map[string]string{
-		"valid":           validConfig,
-		"unknown":         strings.Replace(validConfig, `"monitoring_enabled"`, `"shutdown_enabled"`, 1),
-		"LAN":             strings.Replace(validConfig, "127.0.0.1", "0.0.0.0", 1),
-		"version":         strings.Replace(validConfig, `"schema_version":1`, `"schema_version":2`, 1),
-		"overlap":         strings.Replace(validConfig, `"1s"`, `"2s"`, 1),
-		"premature stale": strings.Replace(validConfig, `"10s"`, `"3s"`, 1),
-		"zero interval":   strings.Replace(validConfig, `"2s"`, `"0s"`, 1),
-		"trailing data":   validConfig + `{}`,
-		"malformed":       `{`,
+		"valid":             validConfig,
+		"unknown":           strings.Replace(validConfig, `"monitoring_enabled"`, `"shutdown_enabled"`, 1),
+		"legacy web listen": strings.Replace(validConfig, `"poll_interval"`, `"listen":"127.0.0.1:8080","poll_interval"`, 1),
+		"legacy web toggle": strings.Replace(validConfig, `"poll_interval"`, `"web_enabled":false,"poll_interval"`, 1),
+		"version":           strings.Replace(validConfig, `"schema_version":1`, `"schema_version":2`, 1),
+		"overlap":           strings.Replace(validConfig, `"1s"`, `"2s"`, 1),
+		"premature stale":   strings.Replace(validConfig, `"10s"`, `"3s"`, 1),
+		"zero interval":     strings.Replace(validConfig, `"2s"`, `"0s"`, 1),
+		"trailing data":     validConfig + `{}`,
+		"malformed":         `{`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.json")
@@ -43,7 +44,7 @@ func TestLoadConfig(t *testing.T) {
 }
 
 func TestEventHistoryValidation(t *testing.T) {
-	base := Config{SchemaVersion: 1, Listen: "127.0.0.1:8080", PollInterval: "2s", TransactionTimeout: "1s", StaleAfter: "10s"}
+	base := Config{SchemaVersion: 1, PollInterval: "2s", TransactionTimeout: "1s", StaleAfter: "10s"}
 	valid := events.Options{Directory: t.TempDir(), MaxFileBytes: 5 << 20, MaxFiles: 5}
 	base.EventHistory = &valid
 	if err := base.Validate(); err != nil {
@@ -108,8 +109,7 @@ func TestPowerControlRequiresExplicitModeTriggersAndDesktopAuthorization(t *test
 		{"manual without desktop IPC", `"power_control":{"mode":"dry_run",` + manual + `}`, false, false},
 		{"manual desktop dry run", desktop + `,"power_control":{"mode":"dry_run",` + manual + `}`, false, true},
 		{"manual desktop live", desktop + `,"power_control":{"mode":"live",` + manual + `}`, false, true},
-		{"desktop only", desktop + `,"web_enabled":false`, false, true},
-		{"no control surface", `"web_enabled":false`, false, false},
+		{"desktop only", desktop, false, true},
 		{"unknown control", `"power_control":{"mode":"dry_run","ups_power_off":true}`, true, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {

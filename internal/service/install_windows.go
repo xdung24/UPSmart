@@ -153,7 +153,7 @@ func install(sourceConfig string) (resultErr error) {
 		}
 	}()
 	service, err := manager.CreateService(Name, paths.executable, mgr.Config{
-		DisplayName: "UPSmart Monitor", Description: "ARES UPS monitoring, local desktop controls and optional read-only dashboard",
+		DisplayName: "UPSmart Monitor", Description: "ARES UPS monitoring with native desktop controls",
 		StartType: mgr.StartAutomatic, DelayedAutoStart: true, ErrorControl: mgr.ErrorNormal,
 		ServiceStartName: `NT AUTHORITY\LocalService`,
 	}, "service", "run", "--config", paths.config)

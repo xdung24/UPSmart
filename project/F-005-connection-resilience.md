@@ -1,6 +1,6 @@
 # F-005 - Connection resilience
 
-Updated: 2026-11-12 | Priority: P0 | Status: Bounded helper and polling implemented; live reconnect pending
+Updated: 2026-11-16 | Priority: P0 | Status: Bounded helper and polling implemented; live reconnect pending
 
 ## Purpose and user journey
 
@@ -23,7 +23,7 @@ The service remains responsive when the UPS disappears, shows the last known sam
 ## Acceptance and tests
 
 - RES-01: unplug/replug recovers without process restart and without unbounded handle/goroutine growth.
-- RES-02: timeout and permanently blocked transport do not freeze HTTP or service stop.
+- RES-02: timeout and permanently blocked transport do not freeze the desktop UI or service stop.
 - RES-03: bounded fake-clock tests verify backoff, single-flight operation and reset after success.
 - RES-04: stale data remains visibly stale and cannot trigger shutdown.
 - RES-05: service stop interrupts retry waiting and terminates device work within the documented stop budget.

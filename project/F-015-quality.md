@@ -1,6 +1,6 @@
 # F-015 - Quality and verification
 
-Updated: 2026-11-12 | Priority: P0 | Status: Persistence/service candidate tests/vet/build pass; runtime deployment pending
+Updated: 2026-11-16 | Priority: P0 | Status: Desktop-only transport removal tested/built; runtime deployment pending
 
 ## Purpose and user journey
 
@@ -10,10 +10,10 @@ The user can see which acceptance criteria passed in simulation, which passed on
 
 ## Implementation and test approach
 
-- Proposed Go test entry points: focused `*_test.go` files beside parser, state, policy, event, config and HTTP code; sanitized protocol fixtures near their consumers.
+- Proposed Go test entry points: focused `*_test.go` files beside parser, state, policy, event, config and desktop IPC code; sanitized protocol fixtures near their consumers.
 - Use deterministic fake clocks and adapters; never issue real OS/UPS shutdown from automated tests by default.
-- Prioritize tests that fail for actual behavior defects: malformed replies, stale-state eligibility, restoration/countdown races, reconnect bounds, persistence failure and unsafe API reachability.
-- Implement one vertical slice at a time: transport discovery -> parser -> state -> cached API -> dashboard -> service -> optional policy.
+- Prioritize tests that fail for actual behavior defects: malformed replies, stale-state eligibility, restoration/countdown races, reconnect bounds, persistence failure and unauthorized IPC.
+- Implement one vertical slice at a time: transport discovery -> parser -> state -> cached snapshots -> native desktop -> service -> optional policy.
 - Run the smallest relevant test packages first. If Go is chosen, use `go test` for affected packages, `go vet` for the implemented command/packages and a Windows amd64 build.
 - Use race detection where the selected Windows toolchain supports it; record unavailable tooling explicitly rather than claiming a race-free build.
 - Full-suite checks are appropriate at integrated milestone boundaries, not as a substitute for targeted regression tests.
@@ -134,3 +134,7 @@ Full Go tests/vet and Node web tests pass for separate desktop/backend integrati
 The actual GUI executable initially exposed Windows loader error 193 despite a successful default build; [E-006](E-006-native-desktop-linker.md) records the verified internal-linker build fix. Native window `UPSmart Monitor` subsequently opened and exited 0 in a safe no-backend-request smoke test. This is native startup evidence, not visual layout/tray or live-service verification.
 
 The backend separately builds with `CGO_ENABLED=0`; unchanged local configuration still validates with PC shutdown disabled. No installed compiler was replaced, no application binary was manually patched, and no active monitor configuration/restart, service install, real bot connection, USB read or power test occurred. Actual cross-account/LocalService integration, visual/tray checks, signing/redistribution and the existing race-runtime limitation remain pending.
+
+### Desktop-only transport change - 2026-11-16
+
+Focused `go test .\internal\config .\internal\monitor .\internal\desktop .\internal\control .\cmd\ups-daemon`, full `go test .\...`, and `go vet .\...` passed after removing web support. Windows amd64 builds passed for the daemon (`CGO_ENABLED=0`) and the Fyne desktop (internal linker); build outputs went to temporary paths. Config tests verify legacy `listen` and `web_enabled` keys are rejected. No GUI smoke launch, local configuration edit, daemon/service start, USB access or power operation was performed. Live daemon handover remains pending; race testing was not run.

@@ -1,6 +1,6 @@
 # F-013 - Architecture and domain models
 
-Updated: 2026-11-12 | Priority: P0 | Status: Go monitoring core implemented
+Updated: 2026-11-16 | Priority: P0 | Status: Shared engine, named-pipe IPC and dual-mode desktop implemented
 
 ## Purpose and user journey
 
@@ -10,9 +10,9 @@ The application continues serving honest health information even when the device
 
 ## Proposed architecture
 
-Go was confirmed by the user. `cmd/ups-daemon/main.go` and direct mode in `cmd/upsmart-desktop/main.go` call the shared `internal/monitor.Run` lifecycle, composing configuration, USB, state/events, web and optional hardware/Telegram workers. The opt-in shutdown candidate also composes `internal/policy` and the injectable `internal/platform` shutdown adapter. Earlier root-entry references below record the prior layout.
+Go was confirmed by the user. `cmd/ups-daemon/main.go` and direct mode in `cmd/upsmart-desktop/main.go` call the shared `internal/monitor.Run` lifecycle, composing configuration, USB, state/events, protected desktop IPC and optional hardware/Telegram workers. The opt-in shutdown candidate also composes `internal/policy` and the injectable `internal/platform` shutdown adapter. Earlier root-entry references below record the prior layout.
 
-Data flow: serialized transport -> protocol parser -> validated sample -> state reducer -> immutable snapshot. The reducer emits bounded events and policy inputs. HTTP reads snapshots only. Only the policy controller can invoke an injected OS shutdown adapter.
+Data flow: serialized transport -> protocol parser -> validated sample -> state reducer -> immutable snapshot. The reducer emits bounded events and policy inputs. Desktop IPC reads cached snapshots only. Only the policy controller can invoke an injected OS shutdown adapter.
 
 ## Domain contracts
 
@@ -27,7 +27,7 @@ Data flow: serialized transport -> protocol parser -> validated sample -> state 
 
 ## Ownership and lifecycle
 
-- One device owner; one state/policy controller; one serialized event writer; bounded HTTP workers/queues.
+- One device owner; one state/policy controller; one serialized event writer; bounded IPC handlers/queues.
 - Publish immutable copies under a small synchronization boundary. Never hold a snapshot lock while performing USB, disk or OS shutdown calls.
 - Inject transport, clock, event sink and shutdown adapter for deterministic tests.
 - Process restart invalidates all monotonic timing and starts policy qualification from fresh samples. Persisted events are not evidence of present power state.
@@ -36,14 +36,14 @@ Data flow: serialized transport -> protocol parser -> validated sample -> state 
 
 ## Acceptance and tests
 
-- ARCH-01: HTTP requests cannot invoke USB or shutdown adapters.
+- ARCH-01: desktop IPC requests cannot invoke USB or shutdown adapters.
 - ARCH-02: fake transport/clock/OS adapters exercise the complete monitoring-to-policy path without hardware.
 - ARCH-03: concurrent reads, updates and stop do not race or deadlock; memory and queues remain bounded.
 - ARCH-04: restart does not reuse stale telemetry or a historical countdown.
 
 ## Decisions, results and next steps
 
-2026-11-12: the monitoring vertical slice is implemented without policy/OS-control adapters. Native descriptor/status access runs in a short-lived bounded child; the parent owns serial polling and a cross-process mutex. The HTTP server reads synchronized immutable snapshot copies and a 200-event memory history.
+2026-11-12: the monitoring vertical slice is implemented without policy/OS-control adapters. Native descriptor/status access runs in a short-lived bounded child; the parent owns serial polling and a cross-process mutex. The then-present HTTP server read synchronized immutable snapshot copies and a 200-event memory history; that TCP server was removed on 2026-11-16.
 
 Tests passed for cached-data isolation, staleness boundaries, observed outage reset, event retention and reader cancellation. Actual helper polling and concurrent HTTP/browser reads worked. Race-detector startup is blocked by [E-003](E-003-race-runtime-startup.md), so no race-free claim is made.
 
@@ -75,7 +75,7 @@ Telemetry-to-policy-to-API and confirmed-command-to-dry-run tests pass with fake
 
 [F-018](F-018-native-desktop.md) adds `cmd/upsmart-desktop`, `internal/desktop` and `internal/control`. Widgets read cached typed snapshots/events/hardware and submit confirmed policy operations through a protected Windows named pipe. With a daemon, desktop Quit leaves monitoring alone. The later dual-mode extension below supersedes service-client-only operation.
 
-The backend owns one optional pipe HTTP-framing server with account ACLs and no TCP control routes. Optional web and independent Telegram workers are read-only. Bridge requests serialize policy edits/confirmation checks; controller state/dispatch remains independently serialized. Disk persistence occurs before activation, outside the snapshot lock. Cancelled queued requests do not execute; interrupted mutating requests disclose unknown acceptance rather than claiming no side effect.
+The backend owns one optional pipe HTTP-framing server with account ACLs and no TCP listener. Independent Telegram workers use cached state. Bridge requests serialize policy edits/confirmation checks; controller state/dispatch remains independently serialized. Disk persistence occurs before activation, outside the snapshot lock. Cancelled queued requests do not execute; interrupted mutating requests disclose unknown acceptance rather than claiming no side effect.
 
 The disabled-policy evaluation worker still runs when desktop IPC exists so an explicitly saved policy can be enabled without restarting monitoring. Effective persisted policy loading is shared with offline configuration validation. Backend remains buildable without CGO; only the separate Fyne GUI requires the compiler/graphics stack.
 
@@ -87,8 +87,6 @@ The user selected daemon-first startup with direct USB fallback only when no dae
 
 Simulation tests, full tests/vet, both Windows builds, offline native-window startup and invalid-helper rejection passed. Live final-GUI USB/SCM handover remains pending; detailed evidence and defaults are in [F-018](F-018-native-desktop.md).
 
-### Pipe, web or USB - 2026-11-12
+### Historical pipe/web/USB candidate - 2026-11-12 (web removed 2026-11-16)
 
-The desktop now selects a named pipe first, then an existing localhost web API, then desktop-owned USB. `monitor.Connections` lazily resolves the web client only after pipe failure. A foreground daemon is sufficient; Windows service installation is never a desktop dependency.
-
-`control.WebClient` adapts existing cached GET status/hardware/events routes to the desktop snapshot, with bounded loopback-only requests, no proxy/redirects and no mutation path. Web sessions are explicitly read-only; their UI cannot edit policy or schedule/cancel power actions even if remote policy flags are enabled. Pipe/direct control safety is unchanged. Ownership guards still precede any direct polling, and sessions never silently switch owners after a disconnect. Actual loopback API/session tests with fake state passed; no live daemon or device was restarted.
+The superseded candidate selected a named pipe, localhost web API, then desktop-owned USB. The user requested web removal on 2026-11-16; current behavior is pipe first, otherwise direct USB subject to the same global ownership guard. The named pipe is the only daemon-to-desktop transport, and sessions never silently switch owners after a disconnect.

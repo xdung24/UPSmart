@@ -10,11 +10,10 @@ import (
 )
 
 func DirectConfig(path string) (config.Config, error) {
-	web := false
 	cfg := config.Config{
-		SchemaVersion: 1, Listen: "127.0.0.1:8080",
-		PollInterval: "2s", TransactionTimeout: "1s", StaleAfter: "10s",
-		MonitoringEnabled: true, Web: &web,
+		SchemaVersion: 1,
+		PollInterval:  "2s", TransactionTimeout: "1s", StaleAfter: "10s",
+		MonitoringEnabled: true,
 	}
 	if path != "" {
 		var err error

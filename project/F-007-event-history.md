@@ -1,12 +1,12 @@
 # F-007 - Event history
 
-Updated: 2026-11-12 | Priority: P1 | Status: Persistence implemented/tested; not enabled in local configuration
+Updated: 2026-11-16 | Priority: P1 | Status: Persistence implemented/tested; not enabled in local configuration
 
 ## Purpose and user journey
 
 Mục tiêu: xem lại thời điểm mất điện, kết nối lại và lý do quyết định tắt máy mà không để nhật ký chiếm đầy ổ đĩa.
 
-The user views recent events in the dashboard and can inspect local rotated logs for diagnosis.
+The user views recent events in the native desktop and can inspect local rotated logs for diagnosis.
 
 ## Implementation
 

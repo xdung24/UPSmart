@@ -1,6 +1,12 @@
 # F-004 - Web dashboard
 
-Updated: 2026-11-12 | Priority: P0 | Status: Monitoring dashboard live/browser verified
+Updated: 2026-11-16 | Priority: P0 | Status: Removed at user request; historical verification retained
+
+## Current disposition - 2026-11-16
+
+The user requested: "Revemo the web support. I only need the desktop app." The embedded dashboard, TCP HTTP server, browser assets and browser-specific behavior have been removed. This feature is no longer planned or supported. The historical implementation and test results below document what existed before removal; they are not current deliverables. Desktop presentation is tracked in [F-018](F-018-native-desktop.md).
+
+Removal validation on 2026-11-16: full Go tests and vet passed, and both Windows applications built successfully without a TCP web package. No browser or listener smoke test was run because the feature no longer exists.
 
 ## Purpose and user journey
 

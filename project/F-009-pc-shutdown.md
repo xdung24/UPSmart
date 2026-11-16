@@ -1,6 +1,6 @@
 # F-009 - Graceful PC shutdown
 
-Updated: 2026-11-12 | Priority: P1 | Status: Opt-in candidate mock-tested; disabled locally; no real shutdown
+Updated: 2026-11-16 | Priority: P1 | Status: Opt-in candidate mock-tested; disabled locally; no real shutdown
 
 ## Purpose and user journey
 
@@ -26,7 +26,7 @@ Desktop settings require explicit desktop IPC/file configuration and persist bef
 - Use an injectable OS shutdown adapter. Production invokes the fixed Windows System32 `shutdown.exe /s /t 0` with a five-second process deadline. The application owns the countdown: a nonzero Windows `/t` would implicitly force applications closed, so neither that nor `/f` is used. This bounded Windows utility replaces the originally proposed in-process API/privilege manipulation. Tests use recording fakes; no privilege is granted automatically.
 - One OS request per observed outage/controller lifetime. Failed requests enter a visible failed state without rapid retries; restart must requalify from new samples and the full configured delay.
 - Once Windows accepts the request, cancellation is not promised. Explain this boundary in UI and logs.
-- PC shutdown does not require or imply UPS output control. Closing the dashboard has no effect on policy execution.
+- PC shutdown does not require or imply UPS output control. Closing the desktop window hides it; explicit Quit stops only desktop-owned monitoring, not daemon policy execution.
 
 ## Acceptance and tests
 

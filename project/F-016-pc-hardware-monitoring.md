@@ -1,12 +1,12 @@
 # F-016 - PC hardware monitoring
 
-Updated: 2026-11-12 | Priority: P2 | Status: Optional collector/API implemented; hardware support partial
+Updated: 2026-11-16 | Priority: P2 | Status: Optional collector and desktop view retained; hardware support partial
 
 ## Purpose and user journey
 
-Mục tiêu: xem tải CPU, GPU và thông tin ổ đĩa trên cùng dashboard với UPS, phân biệt rõ dữ liệu không hỗ trợ và dữ liệu đã cũ.
+Mục tiêu: xem tải CPU, GPU và thông tin ổ đĩa trong cùng desktop app với UPS, phân biệt rõ dữ liệu không hỗ trợ và dữ liệu đã cũ.
 
-The user opens the local dashboard and sees a separate PC hardware section. Missing metrics do not prevent UPS monitoring or display misleading zero readings.
+The user opens the desktop app and sees a separate PC hardware section. Missing metrics do not prevent UPS monitoring or display misleading zero readings.
 
 Current scope decision, 2026-11-12: the user removed all PC hardware temperature monitoring from both the app and plan. CPU/GPU/disk/ACPI temperature collection, placeholders, fields, UI and provider/driver investigations are no longer planned. Existing UPS temperature in [F-002](F-002-telemetry.md) is unchanged.
 
@@ -26,11 +26,11 @@ Label physical disks separately from logical volumes. Do not equate free space w
 
 - Use Windows performance/storage APIs for utilization, capacity and throughput. No PC temperature source or sensor driver is included.
 - Keep sampling independent of USB polling, with bounded timeouts and retry/backoff. A failed or slow hardware provider must not delay UPS state updates or shutdown-policy evaluation.
-- Proposed entry point: `internal/hardware`; reuse existing state/web patterns rather than giving browser requests direct hardware access.
+- Proposed entry point: `internal/hardware`; desktop reads cached state rather than accessing hardware directly.
 - Use a separately timestamped cached hardware snapshot, with stable device/sensor identifiers, units, nullable values, explicit availability/error reasons and freshness. CPU utilization and disk throughput need valid sampling intervals; initial samples are unavailable until a baseline exists.
-- Initially proposed a separate read-only `GET /api/v1/hardware` endpoint and dashboard section, preserving the existing UPS status contract in [F-014](F-014-backend-api.md). Implemented in the collector milestone below.
+- PC data is sampled independently and included in cached desktop snapshots; the earlier HTTP endpoint/dashboard route was removed with web support on 2026-11-16.
 - Add validated opt-in configuration and bounded sampling intervals through [F-008](F-008-configuration.md). Defaults and resource budgets must be decided before implementation; do not change current local configuration.
-- Reuse loopback-only access and response protections from [F-011](F-011-web-access-safety.md). Avoid exposing disk serial numbers or unnecessary host identifiers.
+- Reuse the authorized local named-pipe transport described in [F-018](F-018-native-desktop.md). Avoid exposing disk serial numbers or unnecessary host identifiers.
 - No writes to hardware settings, disk tests/repairs, fan control, overclocking or automatic hardware-triggered shutdown. Do not silently elevate privileges or install a driver/helper.
 - Missing optional PC telemetry must not make UPS readiness fail. Surface its own degraded state and actionable diagnostics.
 
@@ -40,7 +40,7 @@ Label physical disks separately from logical volumes. Do not equate free space w
 - HW-02: multiple GPUs/disks, integrated GPUs without dedicated memory, and disk-to-volume mapping remain unambiguous.
 - HW-03: provider failure, timeout, device removal and stale samples do not block UPS polling or corrupt last-known data; recovery is visible.
 - HW-04: utilization/throughput calculations handle initial samples, invalid intervals and counter resets without negative or non-finite readings.
-- HW-05: cached API/dashboard reads trigger no additional hardware queries and retain existing access restrictions.
+- HW-05: cached desktop reads trigger no additional hardware queries and retain the named-pipe access restrictions.
 - HW-06: compare live readings against Windows Task Manager over recorded sampling intervals; document expected differences rather than claiming exact parity.
 - HW-07: verify permissions and provider availability in both console and LocalService contexts before claiming background-service support.
 - HW-08: measure sampling CPU/memory overhead against an agreed budget before enabling the feature by default.
@@ -66,7 +66,7 @@ Proposed P2 priority, exact measurements, polling interval, resource budget and 
 
 ### Collector candidate - 2026-11-12
 
-The user requested continued coding of all workstreams. Implemented `internal/hardware`, opt-in `hardware.interval` configuration (10 seconds-5 minutes), independent sampling, cached `/api/v1/hardware` and a separate dashboard section. Existing configurations leave this disabled.
+The user requested continued coding of all workstreams. Implemented `internal/hardware`, opt-in `hardware.interval` configuration (10 seconds-5 minutes), independent sampling, cached `/api/v1/hardware` and a separate dashboard section. Existing configurations leave this disabled. This route/view integration is historical; the current desktop consumes cached snapshots over named-pipe IPC or local direct monitoring.
 
 Actual sources: native `GetSystemTimes` CPU utilization, DXGI GPU inventory/memory capacity, Windows PDH GPU engine/memory and physical-disk activity counters, logical-volume space, and optional Windows storage-reliability temperature data. Cross-tool measurement accuracy remains unverified. Device/volume mapping is not guessed.
 

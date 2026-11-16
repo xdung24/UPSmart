@@ -1,12 +1,12 @@
 # F-003 - Power status
 
-Updated: 2026-11-12 | Priority: P0 | Status: State reducer implemented; live mains baseline only
+Updated: 2026-11-16 | Priority: P0 | Status: State reducer implemented; live mains baseline only
 
 ## Purpose and user journey
 
 Mục tiêu: phân biệt mất điện thật, UPS chạy pin và mất kết nối để tránh báo sai hoặc tắt máy nhầm.
 
-The dashboard reports the latest verified mains/battery state and emits one event when that state changes.
+The native desktop reports the latest verified mains/battery state and emits one event when that state changes.
 
 ## Implementation
 

@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
-	"strconv"
 	"time"
 
 	"upsmart/internal/control"
@@ -18,7 +16,6 @@ import (
 
 type Config struct {
 	SchemaVersion      int                    `json:"schema_version"`
-	Listen             string                 `json:"listen"`
 	PollInterval       string                 `json:"poll_interval"`
 	TransactionTimeout string                 `json:"transaction_timeout"`
 	StaleAfter         string                 `json:"stale_after"`
@@ -28,7 +25,6 @@ type Config struct {
 	Telegram           *notifications.Options `json:"telegram,omitempty"`
 	PowerControl       *policy.Options        `json:"power_control,omitempty"`
 	Desktop            *control.Options       `json:"desktop,omitempty"`
-	Web                *bool                  `json:"web_enabled,omitempty"`
 }
 
 type HardwareOptions struct {
@@ -88,14 +84,6 @@ func (c Config) Validate() error {
 	if c.SchemaVersion != 1 {
 		return errors.New("schema_version must be 1")
 	}
-	host, port, err := net.SplitHostPort(c.Listen)
-	if err != nil || host != "127.0.0.1" {
-		return errors.New("listen must be 127.0.0.1:<port>; LAN access is not supported")
-	}
-	p, err := strconv.Atoi(port)
-	if err != nil || p < 1 || p > 65535 {
-		return errors.New("listen port must be between 1 and 65535")
-	}
 	poll, err := duration("poll_interval", c.PollInterval, time.Second, time.Minute)
 	if err != nil {
 		return err
@@ -145,13 +133,8 @@ func (c Config) Validate() error {
 			return err
 		}
 	}
-	if !c.WebEnabled() && c.Desktop == nil {
-		return errors.New("web_enabled:false requires desktop IPC")
-	}
 	return nil
 }
-
-func (c Config) WebEnabled() bool { return c.Web == nil || *c.Web }
 
 func duration(name, value string, min, max time.Duration) (time.Duration, error) {
 	d, err := time.ParseDuration(value)
