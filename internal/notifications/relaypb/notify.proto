@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package notify;
+
+option go_package = "upsmart/internal/notifications/relaypb";
+
+// Wire contract for rdpwatcher's /notify.Notifier/SendMessage.
+message NotifyRequest {
+  string message = 1;
+}
+
+message NotifyResponse {
+  bool sent = 1;
+  string error = 2;
+}

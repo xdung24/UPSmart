@@ -11,6 +11,11 @@ import (
 
 var decimalField = regexp.MustCompile(`^-?[0-9]+(?:\.[0-9]+)?$`)
 
+const (
+	batteryEmptyVoltage = 24.0
+	batteryFullVoltage  = 27.0
+)
+
 type Measurement struct {
 	Value   *float64 `json:"value"`
 	Unit    string   `json:"unit"`
@@ -27,8 +32,11 @@ type Reading struct {
 
 func ParseQ1(raw string) (Reading, error) {
 	var result Reading
-	if len(raw) > 256 || !strings.HasPrefix(raw, "(") {
-		return result, errors.New("invalid Q1 frame")
+	if len(raw) > 256 {
+		return result, fmt.Errorf("invalid Q1 frame: received %d bytes; maximum is 256", len(raw))
+	}
+	if !strings.HasPrefix(raw, "(") {
+		return result, fmt.Errorf("invalid Q1 frame: expected '(' prefix; received %d bytes, prefix %q", len(raw), raw[:min(len(raw), 32)])
 	}
 	// Indexed-string transports may omit the terminal carriage return.
 	body := strings.TrimSuffix(raw[1:], "\r")
@@ -76,7 +84,7 @@ func ParseQ1(raw string) (Reading, error) {
 		v := values[field.i]
 		result.Measurements[field.name] = Measurement{Value: &v, Unit: field.unit, Quality: "reported"}
 	}
-	result.Measurements["battery_capacity"] = Measurement{Unit: "%", Quality: "unavailable", Reason: "Not reported by the Q1 status query"}
+	result.Measurements["battery_capacity"] = EstimateBatteryCapacity(values[5])
 	result.Mode = "online"
 	if bits[0] == '1' {
 		result.Mode = "on_battery"
@@ -84,4 +92,24 @@ func ParseQ1(raw string) (Reading, error) {
 	result.LowBattery = bits[1] == '1'
 	result.Fault = bits[3] == '1'
 	return result, nil
+}
+
+// EstimateBatteryCapacity maps a finite pack voltage to a display-only capacity estimate.
+func EstimateBatteryCapacity(voltage float64) Measurement {
+	if math.IsNaN(voltage) || math.IsInf(voltage, 0) || voltage < 0 {
+		return Measurement{Unit: "%", Quality: "unavailable", Reason: "Invalid battery voltage"}
+	}
+	// Interpolate the user-provided 24 V pack endpoints; policy uses only the UPS low-battery flag.
+	var capacity float64
+	if voltage <= batteryEmptyVoltage {
+		capacity = 0
+	} else if voltage >= batteryFullVoltage {
+		capacity = 100
+	} else {
+		capacity = (voltage - batteryEmptyVoltage) / (batteryFullVoltage - batteryEmptyVoltage) * 100
+	}
+	return Measurement{
+		Value: &capacity, Unit: "%", Quality: "estimated",
+		Reason: "Linear estimate from user-provided 24.0-27.0 V battery-pack endpoints",
+	}
 }

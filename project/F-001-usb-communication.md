@@ -1,6 +1,10 @@
 # F-001 - USB communication
 
-Updated: 2026-11-12 | Priority: P0 | Status: Read-only Q1 live verified
+Updated: 2026-11-16 | Priority: P0 | Status: Q1 live verified; independent-startup observation open
+
+## Current startup observation - 2026-11-16
+
+[E-008](E-008-q1-startup-control-response.md) records repeated `0x05` status responses and one successful protected read after vendor UPSmart was opened and fully exited. The exact initialization requirement remains unknown; this does not establish independent cold-start operation. Buffer/startup experiments were not retained as unverified transport changes. Only bounded escaped failure diagnostics were delivered; targeted tests/vet and both Windows builds passed. Full evidence, user approvals and remaining verification are authoritative in E-008.
 
 ## Purpose and user journey
 

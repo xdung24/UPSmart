@@ -74,14 +74,14 @@ After the user approved the changed root-level layout, these commands passed:
 go test .\...
 go test -count=5 .\internal\events .\internal\service
 go vet . .\internal\...
-go build -o .\bin\upsmart-next.exe .
+go build -o .\bin\upsdaemon.exe .
 ```
 
 New checks cover exact byte/file retention thresholds, reduced retention and unrelated-file preservation, malformed/incomplete history recovery, simulated write failure/recovery with retained loss evidence, oversized-history preservation, cross-session pagination without current-state resurrection, history configuration rejection, SCM handler readiness/interrogate/cancellation/failures/time budgets, SCM-only command guard, rejection of unprotected deployment output and recognition of identical portable/installed process images.
 
 Tests use temporary filesystem directories and fake service applications; they do not register a service, shut down the PC/UPS, edit local configuration or replace a monitor. The user explicitly selected build-only. The ordinary full suite passed; the previously blocked race detector was not rerun and remains unverified.
 
-Final candidate rebuild and repeated checks passed after adding rejection of non-regular journal targets. Documentation verification passed for 21 Markdown files, 67 local links and complete F-000 through F-015 coverage. Candidate output is `bin/upsmart-next.exe` (10,249,216 bytes); the original executable was not replaced.
+Final candidate rebuild and repeated checks passed after adding rejection of non-regular journal targets. Documentation verification passed for 21 Markdown files, 67 local links and complete F-000 through F-015 coverage. Candidate output is `bin/upsdaemon.exe` (10,249,216 bytes); the original executable was not replaced.
 
 Not executed: real candidate browser/API restart, full-volume exhaustion, actual Administrator deployment/ACL enforcement, LocalService HID access, SCM install/start/stop/uninstall/crash recovery, physical USB/mains tests or shutdown control. Keep feature-local acceptance limitations open.
 
@@ -89,7 +89,7 @@ Next: separately approved persistence/restart and elevated service integration t
 
 ### Default startup change - 2026-11-12
 
-User chose no-argument monitoring startup. `go test .`, `go vet .`, root candidate build, `upsmart-next.exe --help` and `upsmart-next.exe serve --help` passed. Four focused CLI tests verify valid default dispatch through an injected monitor, missing/invalid local-file errors and preserved explicit configuration selection. Actual helper-free CLI help exits zero without timestamped error logging.
+User chose no-argument monitoring startup. `go test .`, `go vet .`, root candidate build, `upsdaemon.exe --help` and `upsdaemon.exe serve --help` passed. Four focused CLI tests verify valid default dispatch through an injected monitor, missing/invalid local-file errors and preserved explicit configuration selection. Actual helper-free CLI help exits zero without timestamped error logging.
 
 This validation does not start a live monitor or alter local configuration. Candidate runtime/startup integration under Air remains untested; its existing no-argument configuration now selects the documented default behavior. Feature acceptance and usage are recorded in [F-012](F-012-delivery-verification.md).
 
@@ -118,7 +118,7 @@ go test .\...
 go vet .\...
 node --check .\internal\web\static\app.js
 node --test .\internal\web\app_test.cjs
-go build -o .\bin\upsmart-next.exe .
+go build -o .\bin\upsdaemon.exe .
 ```
 
 Feature-local evidence: [F-009](F-009-pc-shutdown.md) covers fake-clock policy/non-forced adapter; [F-017](F-017-telegram-notifications.md) covers local HTTP command/auth/replay tests; [F-004](F-004-web-dashboard.md) and [F-014](F-014-backend-api.md) cover visible policy and unchanged readonly boundaries. Only injected fakes are used for OS requests, including tests labeled `live`; no real shutdown executable is launched by tests.
@@ -137,4 +137,4 @@ The backend separately builds with `CGO_ENABLED=0`; unchanged local configuratio
 
 ### Desktop-only transport change - 2026-11-16
 
-Focused `go test .\internal\config .\internal\monitor .\internal\desktop .\internal\control .\cmd\ups-daemon`, full `go test .\...`, and `go vet .\...` passed after removing web support. Windows amd64 builds passed for the daemon (`CGO_ENABLED=0`) and the Fyne desktop (internal linker); build outputs went to temporary paths. Config tests verify legacy `listen` and `web_enabled` keys are rejected. No GUI smoke launch, local configuration edit, daemon/service start, USB access or power operation was performed. Live daemon handover remains pending; race testing was not run.
+Focused `go test .\internal\config .\internal\monitor .\internal\desktop .\internal\control .\cmd\upsdaemon`, full `go test .\...`, and `go vet .\...` passed after removing web support. Windows amd64 builds passed for the daemon (`CGO_ENABLED=0`) and the Fyne desktop (internal linker); build outputs went to temporary paths. Config tests verify legacy `listen` and `web_enabled` keys are rejected. No GUI smoke launch, local configuration edit, daemon/service start, USB access or power operation was performed. Live daemon handover remains pending; race testing was not run.

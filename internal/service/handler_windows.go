@@ -6,129 +6,118 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	"golang.org/x/sys/windows/svc"
-	"golang.org/x/sys/windows/svc/eventlog"
+	systemservice "github.com/kardianos/service"
 )
 
-type handler struct {
+type program struct {
 	application  Application
-	report       func(error)
-	stopTimeout  time.Duration
+	cancel       context.CancelFunc
+	done         chan struct{}
+	err          error
 	startTimeout time.Duration
+	stopTimeout  time.Duration
+	fatal        func(error)
 }
 
-func (h *handler) Execute(_ []string, requests <-chan svc.ChangeRequest, statuses chan<- svc.Status) (bool, uint32) {
+func (p *program) Start(_ systemservice.Service) error {
+	if p.application == nil || p.done != nil {
+		return errors.New("service application is missing or already started")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ready, done := make(chan struct{}), make(chan error, 1)
+	p.cancel, p.done = cancel, make(chan struct{})
+	ready := make(chan struct{})
 	var once sync.Once
-	go func() { done <- h.application(ctx, func() { once.Do(func() { close(ready) }) }) }()
-	status := svc.Status{State: svc.StartPending, CheckPoint: 1, WaitHint: 10000}
-	statuses <- status
-	startBudget := h.startTimeout
-	if startBudget <= 0 {
-		startBudget = 10 * time.Second
-	}
-	startTimer := time.NewTimer(startBudget)
-	defer startTimer.Stop()
-	startDeadline := startTimer.C
-	tick := time.NewTicker(time.Second)
-	defer tick.Stop()
-	var stopDeadline <-chan time.Time
-	var stopTimer *time.Timer
-	defer func() {
-		if stopTimer != nil {
-			stopTimer.Stop()
+	go func() {
+		p.err = p.application(ctx, func() { once.Do(func() { close(ready) }) })
+		if p.err == nil && ctx.Err() == nil {
+			p.err = errors.New("monitoring application exited unexpectedly")
 		}
+		close(p.done)
 	}()
-	for {
-		select {
-		case <-ready:
-			ready = nil
-			startTimer.Stop()
-			startDeadline = nil
-			if status.State == svc.StartPending {
-				status = svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
-				statuses <- status
+	budget := p.startTimeout
+	if budget <= 0 {
+		budget = 10 * time.Second
+	}
+	timer := time.NewTimer(budget)
+	defer timer.Stop()
+	select {
+	case <-ready:
+		go func() {
+			<-p.done
+			if ctx.Err() == nil {
+				p.fatal(p.err)
 			}
-		case request, ok := <-requests:
-			if !ok {
-				cancel()
-				startTimer.Stop()
-				startDeadline = nil
-				h.report(errors.New("SCM control channel closed"))
-				return false, 1
-			}
-			switch request.Cmd {
-			case svc.Interrogate:
-				statuses <- status
-			case svc.Stop, svc.Shutdown:
-				if status.State != svc.StopPending {
-					cancel()
-					status = svc.Status{State: svc.StopPending, CheckPoint: 1, WaitHint: uint32(h.stopTimeout.Milliseconds())}
-					statuses <- status
-					stopTimer = time.NewTimer(h.stopTimeout)
-					stopDeadline = stopTimer.C
-				}
-			}
-		case err := <-done:
-			if err == nil && status.State != svc.StopPending {
-				err = errors.New("monitoring application exited unexpectedly")
-			}
-			if err != nil {
-				h.report(err)
-				return false, 1
-			}
-			return false, 0
-		case <-tick.C:
-			if status.State == svc.StartPending || status.State == svc.StopPending {
-				status.CheckPoint++
-				statuses <- status
-			}
-		case <-stopDeadline:
-			h.report(fmt.Errorf("service stop exceeded %s", h.stopTimeout))
-			return false, 1
-		case <-startDeadline:
-			h.report(fmt.Errorf("service startup exceeded %s", startBudget))
-			return false, 1
-		}
+		}()
+		return nil
+	case <-p.done:
+		cancel()
+		return p.err
+	case <-timer.C:
+		cancel()
+		return fmt.Errorf("service startup exceeded %s", budget)
 	}
 }
 
-type eventWriter struct{ sink *eventlog.Log }
+func (p *program) Stop(_ systemservice.Service) error {
+	if p.cancel == nil {
+		return errors.New("service application was not started")
+	}
+	p.cancel()
+	budget := p.stopTimeout
+	if budget <= 0 {
+		budget = 10 * time.Second
+	}
+	timer := time.NewTimer(budget)
+	defer timer.Stop()
+	select {
+	case <-p.done:
+		return p.err
+	case <-timer.C:
+		return fmt.Errorf("service stop exceeded %s", budget)
+	}
+}
+
+type eventWriter struct{ logger systemservice.Logger }
 
 func (w eventWriter) Write(data []byte) (int, error) {
-	if err := w.sink.Info(1, strings.TrimSpace(string(data))); err != nil {
+	if err := w.logger.Info(strings.TrimSpace(string(data))); err != nil {
 		fmt.Fprintf(os.Stderr, "Windows Event Log write failed: %v\n%s", err, data)
 		return 0, err
 	}
 	return len(data), nil
 }
 
-func Run(application Application) error {
-	isService, err := svc.IsWindowsService()
+func Run(configPath string, application Application) error {
+	if Interactive() {
+		return errors.New("service dispatcher is reserved for Windows Service Control Manager")
+	}
+	paths, err := deploymentPaths()
 	if err != nil {
 		return err
 	}
-	if !isService {
-		return errors.New("service run is reserved for Windows Service Control Manager; use serve for console mode")
+	// kardianos/service does not apply WorkingDirectory on Windows.
+	if err := os.Chdir(filepath.Dir(configPath)); err != nil {
+		return fmt.Errorf("set service working directory: %w", err)
 	}
-	sink, err := eventlog.Open(Name)
+	p := &program{application: application, fatal: func(err error) {
+		log.Printf("Service monitoring failed: %v", err)
+		os.Exit(1)
+	}}
+	svc, err := systemservice.New(p, definition(paths, configPath))
+	if err != nil {
+		return err
+	}
+	logger, err := svc.Logger(nil)
 	if err != nil {
 		return fmt.Errorf("open Windows Event Log: %w", err)
 	}
-	defer sink.Close()
 	oldWriter := log.Writer()
-	log.SetOutput(eventWriter{sink})
+	log.SetOutput(eventWriter{logger})
 	defer log.SetOutput(oldWriter)
-	report := func(err error) {
-		if writeErr := sink.Error(1, err.Error()); writeErr != nil {
-			fmt.Fprintf(os.Stderr, "Service error: %v; Windows Event Log failed: %v\n", err, writeErr)
-		}
-	}
-	return svc.Run(Name, &handler{application: application, report: report, stopTimeout: 10 * time.Second, startTimeout: 10 * time.Second})
+	return svc.Run()
 }

@@ -30,7 +30,7 @@ func main() {
 		return
 	}
 	smoke := flag.Bool("smoke-test", false, "show the desktop briefly, then quit; no backend/control actions")
-	configPath := flag.String("config", "", "configuration for direct USB monitoring")
+	configPath := flag.String("config", "", "YAML configuration for direct USB monitoring")
 	flag.Parse()
 	app := app.NewWithID("local.upsmart.monitor")
 	if flag.NArg() != 0 {

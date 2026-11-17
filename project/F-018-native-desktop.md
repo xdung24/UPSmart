@@ -1,6 +1,6 @@
 # F-018 - Fyne Windows desktop
 
-Updated: 2026-11-16 | Priority: P1 | Status: Daemon named pipe/direct USB tested and built; service installation not required
+Updated: 2026-11-17 | Priority: P1 | Status: Standard-user desktop access preserved; default service IPC setup tested; live reconnection pending
 
 ## Current scope - 2026-11-16
 
@@ -9,22 +9,27 @@ The user requested removal of web support and confirmed that only the desktop ap
 1. Connect to a daemon through its account-restricted local named pipe.
 2. If no compatible daemon is available, run the shared monitor directly in the desktop, provided exclusive USB ownership is available.
 
-The desktop does not discover or connect to a web API. The daemon has no TCP listener, browser dashboard or HTTP API. HTTP framing inside the named pipe is local IPC, not web support. Configure the daemon's `desktop` group to accept a desktop connection; a daemon without this group is not remotely attachable. A Windows service remains optional.
+The desktop does not discover or connect to a web API. The daemon has no TCP listener, browser dashboard or HTTP API. HTTP framing inside the named pipe is local IPC, not web support. New service installations automatically configure the installing Windows account's desktop access; a console daemon needs explicit desktop settings. A Windows service remains optional. **Normal desktop use never requires Administrator rights.**
+
+Current configuration/setup observation [E-010](E-010-service-desktop-ipc-configuration.md): the installed service was running but its copied YAML omitted both desktop fields, so no pipe existed. Installer defaults now supply restricted IPC authorization automatically without enabling power controls. Existing installations still need a one-time administrator-side config update/restart or corrected reinstall, then relaunch the desktop normally. This is not permission elevation in the desktop. Non-elevated explicit/implicit pipe regression tests pass; actual desktop/service reconnection remains pending.
 
 ## Purpose and user journey
 
 Provide a Windows desktop control center similar in workflow to legacy UPSmart, without sharing USB ownership with it. Fyne supplies the native executable/window and its own rendered widgets, not classic Win32 controls. Use original artwork/layout components, not copied vendor graphics.
 
-The user opens the desktop to see readings, power flow, connection/UPS/mains/battery indicators, elapsed outage, active shutdown countdown, hardware and events. Closing hides to the tray. Explicit Quit stops desktop-owned monitoring in direct mode, but never stops a daemon.
+The user opens the desktop to see readings, power flow, connection/UPS/mains/battery indicators, shutdown status/countdown and events. Closing hides to the tray. Explicit Quit stops desktop-owned monitoring in direct mode, but never stops a daemon.
 
 ## Confirmed decisions
 
 - Available transports: prefer named pipe, otherwise host the same USB engine directly when no other owner exists. Exactly one process owns monitoring. The daemon may run as a normal executable; Windows service installation is optional.
 - Desktop is the primary control surface. No Administrator/UAC prompt for normal desktop operations; authorize the configured Windows account through a protected local named pipe.
+- In daemon mode, Shutdown-tab policy changes use the protected IPC policy endpoint, are saved to the daemon's dedicated desktop-policy file and apply immediately. The desktop does not edit the daemon's main YAML configuration.
 - Web dashboard and API were removed at the user's request on 2026-11-16; see [F-004](F-004-web-dashboard.md), [F-011](F-011-web-access-safety.md) and [F-014](F-014-backend-api.md).
 - Telegram is status/checking commands and notifications only. Previous Telegram shutdown/confirmation/cancel commands are superseded, not retained as hidden capabilities.
 - Existing build-only/no-real-power-test boundary remains: do not install a service, change active configuration, restart a monitor or request actual shutdown while developing.
-- Unsupported battery capacity, bypass topology and sensor semantics must remain unavailable/unverified; screenshots are a workflow reference, not evidence that these measurements exist.
+- Battery capacity is not reported by Q1; its user-calibrated display estimate is explicitly labeled and never used for shutdown. If an older daemon omits capacity or marks it unavailable but reports battery voltage, the desktop applies the shared estimator client-side; it does not override invalid capacity data or use missing/unreported voltage. Bypass topology and sensor semantics remain unavailable/unverified; screenshots are a workflow reference, not evidence that these measurements exist.
+- On 2026-11-17, the user requested removal of the bottom footer and a shorter initial window. The desktop now requests an 800x480 window with the tabs as the full content area; the tab contents retain their existing scrolling where needed.
+- On 2026-11-17, the user requested removal of the text at the bottom of Data View. Backend health-warning text is no longer displayed in that tab.
 
 ## Technical design and first delivery
 
@@ -45,8 +50,8 @@ Extract the existing lifecycle into `internal/monitor` for console, SCM and desk
 - DESK-10: direct Quit cancels/joins owned workers; daemon Quit does not stop the daemon. A failed direct runtime cannot silently attach to another owner.
 - DESK-11: both executables dispatch bounded HID helper operations without creating a GUI; smoke mode still performs no backend/configuration/USB operations.
 
-- Separate `cmd/upsmart-desktop` and `internal/desktop`; widgets reuse typed snapshots. In direct mode, `internal/monitor` polls USB in background workers inside the desktop process; widgets still never access hardware.
-- Fyne data/status view, simple honest power-flow diagram, events/hardware views, tray Show/Quit, policy settings and confirmed desktop shutdown/cancel.
+- Separate `cmd/upsdesktop` and `internal/desktop`; widgets reuse typed snapshots. In direct mode, `internal/monitor` polls USB in background workers inside the desktop process; widgets still never access hardware.
+- Fyne data/status view, simple honest power-flow diagram, event log, tray Show/Quit, policy settings and confirmed desktop shutdown/cancel.
 - `internal/control`: bounded local named-pipe transport. Restrict its DACL to SYSTEM, the backend account and the selected desktop user; reject remote clients. Do not add a TCP listener.
 - Explicit optional desktop configuration selects the authorized user and durable policy-settings file. Normal console mode may resolve its own user; service accounts require an explicit human user SID.
 - Validate changed policy, reject changes during pending/terminal requests, persist atomically before activation, restart qualification rather than inheriting outage timing. No settings UI may write directly to service executable/configuration directories.
@@ -62,32 +67,31 @@ Extract the existing lifecycle into `internal/monitor` for console, SCM and desk
 - DESK-05: shutdown requires desktop confirmation and configured countdown; cancellation and dry-run use the existing controller. Tests inject fake OS requests only.
 - DESK-06: successful policy save persists before activation; failed save leaves active policy unchanged; pending/terminal controls cannot be silently reset.
 - DESK-07: no TCP/web listener is present; Telegram power commands cannot schedule/cancel anything.
+- DESK-15: the Shutdown tab exposes existing policy status, manual confirm/cancel and policy editing; updates use protected IPC and hot-apply without rewriting the main daemon YAML or restarting it.
 
 ## Results and next steps
 
 Architecture confirmed with the user; no desktop code was present at planning time. GCC/CGO are available. Fyne v2.8.2 and go-winio v0.6.4 are pinned.
 
-Implemented: separate desktop executable, Data View/readings/conceptual power-flow/status lights, outage/countdown, PC hardware and event viewers, system tray Show/Settings/Quit. Settings edit the active shutdown policy with explicit dry-run/live confirmation; other USB/hardware/Telegram settings remain backend-file configuration in this first candidate. Charts, scheduling, battery management and import/export are not implemented or falsely exposed as working buttons.
+Implemented: separate desktop executable, Data View/readings/conceptual power-flow/status lights, outage/countdown, event viewer, system tray Show/Settings/Quit and a Shutdown tab. The Shutdown tab edits the active policy with explicit dry-run/live confirmation; other USB/hardware/Telegram settings remain backend-file configuration. Charts, scheduling, battery management and import/export are not implemented or falsely exposed as working buttons.
 
-The first IPC tests passed against an actual uniquely named Windows pipe with fake store/controller, no TCP listener and no hardware. Widget tests use Fyne's headless driver and check actual readings/units, unavailable capacity, backend-derived countdown, pending controls and connection-loss invalidation. The native OpenGL/CGO executable build is a separate check, not implied by widget tests.
+The first IPC tests passed against an actual uniquely named Windows pipe with fake store/controller, no TCP listener and no hardware. Widget tests use Fyne's headless driver and check actual readings/units, unavailable capacity, backend-derived countdown, pending controls and connection-loss invalidation. On 2026-11-17, regression tests simulated an older daemon's reported 27.0 V with unavailable capacity and verified the current 27.0 V pack endpoint displays 100.0% estimated (an earlier 27.1 V endpoint displayed 96.8%); another test confirms the bottom of Data View has no text row, the footer is absent, and the window height is 480. `go test .\internal\desktop` passed after the latest UI adjustment. The full Go test suite passed before it and was not rerun. The native OpenGL/CGO executable build is a separate check, not implied by widget tests.
 
 ### Connection and deployment
 
-The daemon must include the `desktop` configuration group to expose its protected named pipe. If IPC is absent or unavailable, the desktop attempts direct USB; the global ownership guard prevents it from competing with a running daemon or legacy monitor. No Windows service install or automatic takeover is required.
+The daemon needs desktop IPC settings to expose its protected named pipe; new service installations generate these automatically for the installing account. If IPC is absent or unavailable, the desktop attempts direct USB; the global ownership guard prevents it from competing with a running daemon or legacy monitor. No Windows service install or automatic takeover is required.
 
-Without a daemon, direct mode needs no separate service/executable. No-argument startup uses 2-second USB polling, 1-second helper timeout and 10-second staleness. Hardware sampling and Telegram are off. Initial power controls are off; settings saved through the desktop are restored from `%LOCALAPPDATA%\UPSmartMonitor\desktop-policy.json`. The directory is created for the current user without elevation. Direct mode uses the same protected pipe, so another desktop may attach as a client of that owner.
+Without a daemon, direct mode needs no separate service/executable. No-argument startup uses 2-second USB polling, 1-second helper timeout and 10-second staleness. Hardware sampling and Telegram are off. Initial power controls are off; settings saved through the desktop are restored from `%LOCALAPPDATA%\UPSmart\desktop-policy.json`. The directory is created for the current user without elevation. Direct mode uses the same protected pipe, so another desktop may attach as a client of that owner.
 
-After a failed pipe probe, `--config PATH` selects the direct-mode configuration. Without it, the desktop uses its documented USB-only defaults and per-user policy storage. Configuration is never discovered implicitly or rewritten, and `monitoring_enabled:false` is respected. Invalid chosen configs and corrupt saved policies fail visibly. Source choice is fixed for the session; restart the desktop to select again.
+After a failed pipe probe, `--config PATH` selects the direct-mode YAML configuration; see [F-008](F-008-configuration.md#yaml-configuration---2026-11-16). Without it, the desktop uses its documented USB-only defaults and per-user policy storage. Configuration is never discovered implicitly or rewritten, and `monitoring_enabled:false` is respected. Invalid chosen configs and corrupt saved policies fail visibly. Source choice is fixed for the session; restart the desktop to select again.
 
-To allow a same-account desktop to connect to a daemon, add `desktop` to its configuration. This is an example only; choose a writable settings path and preserve other configured settings:
+For a console daemon, enable IPC with these flat YAML settings. This is an example only; choose a writable settings path and preserve other configured settings:
 
-```json
-"desktop": {
-  "settings_file": "C:\\Users\\YOUR_USER\\AppData\\Local\\UPSmartMonitor\\desktop-policy.json"
-}
+```yaml
+desktop-settings-file: 'C:\Users\YOUR_USER\AppData\Local\UPSmart\desktop-policy.json'
 ```
 
-The parent settings directory must already exist and be writable to the backend account. Omitted user SID authorizes the console backend's own user only. For a service, specify `user_sid` explicitly and use the exact protected `%ProgramData%\UPSmartMonitor\logs\desktop-policy.json` path. The existing installer creates/protects that logs directory; no new writable executable/configuration directory is introduced.
+The parent settings directory must already exist and be writable to the backend account. An omitted SID authorizes the console backend's own user. New service installation fills `desktop-user-sid` with the installing account and `desktop-settings-file` with `%ProgramData%\UPSmart\logs\desktop-policy.json`. For another target desktop account, configure that human SID explicitly and retain the service policy path. An existing saved service policy requires deliberate review before automatic IPC setup; no hidden activation of shutdown controls occurs.
 
 Obtain your own SID locally, without elevation:
 
@@ -100,30 +104,32 @@ Windows still requires Administrator rights for **service installation**; the ap
 Build and run:
 
 ```powershell
-go build -o .\bin\upsmart-next.exe .\cmd\ups-daemon
-go build -ldflags "-H=windowsgui -linkmode=internal" -o .\bin\upsmart-desktop.exe .\cmd\upsmart-desktop
+go build -o .\bin\upsdaemon.exe .\cmd\upsdaemon
+go build -ldflags "-H=windowsgui -linkmode=internal" -o .\bin\upsdesktop.exe .\cmd\upsdesktop
 # Connect through the daemon pipe, or start direct USB if no monitor owns it:
-.\bin\upsmart-desktop.exe
+.\bin\upsdesktop.exe
 # Explicit configuration for direct USB fallback:
-.\bin\upsmart-desktop.exe --config .\config.local.json
+.\bin\upsdesktop.exe --config .\config.yaml
 # Safe offline window startup test; no backend requests or controls:
-.\bin\upsmart-desktop.exe --smoke-test
+.\bin\upsdesktop.exe --smoke-test
 ```
 
 For the configuration beside the built executables, run a foreground daemon in
 one Command Prompt and the desktop in another; no service installation is needed:
 
 ```bat
-bin\upsmart-next.exe serve --config bin\config.local.json
+bin\upsdaemon.exe serve --config bin\config.yaml
 ```
 
 ```bat
-bin\upsmart-desktop.exe
+bin\upsdesktop.exe
 ```
 
-The daemon configuration must include the `desktop` group for the named pipe to
-accept this client. Otherwise the desktop falls back to direct USB, which will
-be rejected if the daemon already owns monitoring.
+The console daemon configuration must include desktop settings for the named
+pipe to accept this client. Otherwise the desktop falls back to direct USB,
+which is rejected if the daemon already owns monitoring. Service installation
+now supplies these settings automatically; merely running a service with an
+older IPC-disabled configuration does not create a pipe.
 
 ### Settings and authorization boundaries
 
@@ -148,7 +154,7 @@ Service installation, real shutdown and live bot testing still require separate 
 
 Assessment: first native/service-client candidate, not full legacy-feature parity or a deployed service. Further work: deliberately approved IPC-enabled backend deployment, cross-account/LocalService rights checks, visual/tray interaction, general configuration editors and optional charts. The PC policy editor/controls are implemented; other settings are clearly labelled backend-file-only.
 
-The backend entry was moved concurrently to `cmd/ups-daemon`; its desktop/IPC integration was preserved. Current backend build commands above target that package; earlier root-entry milestone commands elsewhere are historical.
+The backend entry was moved concurrently to `cmd/upsdaemon`; its desktop/IPC integration was preserved. Current backend build commands above target that package; earlier root-entry milestone commands elsewhere are historical.
 
 ### Dual-mode results - 2026-11-12
 
@@ -177,3 +183,15 @@ Assessment: dual-mode selection/lifecycle is implemented and simulation-tested; 
 - Removed `listen` and `web_enabled` from configuration; tests verify these old keys are rejected instead of silently ignored. The example configuration no longer contains a listener address.
 - Focused config/monitor/desktop/control/daemon tests and full `go test .\...` passed. `go vet .\...` passed. Windows amd64 daemon build with `CGO_ENABLED=0` and internally linked Fyne desktop build both passed; outputs were written to temporary paths, not over the existing `bin` executables.
 - No local configuration, running monitor, service, hardware connection or power state was changed or tested. Live daemon attachment and direct USB handover remain pending. A legacy configuration containing `listen` or `web_enabled` must have those keys removed before the current daemon will load it.
+
+### GUI navigation refresh - 2026-11-16
+
+The user initially confirmed the tab order as “Data view | Setting | Log.” Data View retains UPS readings (including UPS-reported temperature) and status; Setting is informational; Log contains event history only. PC hardware diagnostics are not shown in the desktop. This UI change does not alter the optional backend hardware collector. PC-temperature support remains excluded; no PC-temperature provider or reading was added.
+
+The user then requested removal of the items shown in the desktop screenshot. Removed the in-content app heading, toolbar icons, connection-source line, backend status line and power-summary line; the original tabs remained. The native window title and ownership/quit footer are unchanged.
+
+The user then requested removal of PC hardware diagnostics. The Log tab now shows only event history; hardware snapshot rendering was removed from the desktop.
+
+The user reported that the Log text was difficult to read in dark mode. Replaced the disabled entry with read-only rich text using Fyne's theme foreground color and vertical scrolling, so text uses the active theme's high-contrast foreground. On 2026-11-16, focused desktop tests and full `go test .\...` passed. Headless checks cover tab order, initial selection, event-only Log, foreground theme token and updated log text. Native visual comparison in dark mode, tray behavior and live daemon/USB connectivity remain unverified.
+
+The user then requested a Shutdown tab and confirmed policy changes should target daemon-owned settings. The fourth tab groups policy status/countdown, confirmed manual shutdown/cancel and access to the existing policy editor. In daemon mode, save continues through protected `/policy` IPC, persists the dedicated desktop-policy file and applies immediately; it does not edit daemon YAML or require a restart. Separate per-trigger delays are not added; the existing shared countdown model remains. On 2026-11-16, `go test .\internal\desktop` and full `go test .\...` passed. The headless test checks all four tab names/order and daemon-policy messaging. Live daemon reload/reconnection and actual shutdown were not tested.

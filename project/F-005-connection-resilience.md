@@ -2,6 +2,8 @@
 
 Updated: 2026-11-16 | Priority: P0 | Status: Bounded helper and polling implemented; live reconnect pending
 
+Current startup observation: [E-008](E-008-q1-startup-control-response.md) records repeated `0x05` responses despite existing backoff and unsuccessful bounded transport experiments. One read recovered after deliberate vendor handover, not by a verified automatic recovery mechanism. No backoff/transport/policy behavior was changed; diagnostic-only regressions passed. Physical reconnect and independent initialization remain pending.
+
 ## Purpose and user journey
 
 Mục tiêu: tự kết nối lại khi rút/cắm USB, đồng thời báo lỗi rõ ràng thay vì treo hoặc hiển thị dữ liệu cũ như mới.

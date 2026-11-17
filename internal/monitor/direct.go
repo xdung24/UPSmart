@@ -27,7 +27,7 @@ func DirectConfig(path string) (config.Config, error) {
 		if err != nil {
 			return cfg, fmt.Errorf("locate desktop settings directory: %w", err)
 		}
-		cfg.Desktop = &control.Options{SettingsFile: filepath.Join(directory, "UPSmartMonitor", "desktop-policy.json")}
+		cfg.Desktop = &control.Options{SettingsFile: filepath.Join(directory, "UPSmart", "desktop-policy.json")}
 	}
 	effective, err := cfg.Effective()
 	if err != nil {

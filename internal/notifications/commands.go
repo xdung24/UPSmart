@@ -61,6 +61,9 @@ func NewCommands(sender *Sender, allowed []int64, read func(string) string) (*Co
 	if sender == nil || read == nil {
 		return nil, errors.New("Telegram commands require a sender and status reader")
 	}
+	if sender.relayAddress != "" {
+		return nil, errors.New("Telegram checking commands are unavailable through the notification relay")
+	}
 	chatID, err := strconv.ParseInt(sender.chatID, 10, 64)
 	if err != nil || chatID == 0 || len(allowed) == 0 || len(allowed) > 16 {
 		return nil, errors.New("Telegram commands require a numeric chat and explicit allowed user IDs")

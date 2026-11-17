@@ -23,7 +23,7 @@ func TestDirectDefaultsAndSavedPolicyUseOnlyPerUserStorage(t *testing.T) {
 	if !cfg.MonitoringEnabled || cfg.Hardware != nil || cfg.Telegram != nil || cfg.PowerControl != nil {
 		t.Fatal("direct defaults unexpectedly enabled optional features or disabled USB")
 	}
-	expected := filepath.Join(root, "UPSmartMonitor", "desktop-policy.json")
+	expected := filepath.Join(root, "UPSmart", "desktop-policy.json")
 	if cfg.Desktop.SettingsFile != expected {
 		t.Fatal("direct settings not isolated to the user profile")
 	}
@@ -39,8 +39,13 @@ func TestDirectDefaultsAndSavedPolicyUseOnlyPerUserStorage(t *testing.T) {
 func TestExplicitDirectConfigurationIsNotReplacedOrRewritten(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("LOCALAPPDATA", root)
-	path := filepath.Join(root, "chosen.json")
-	const document = `{"schema_version":1,"poll_interval":"3s","transaction_timeout":"1s","stale_after":"10s","monitoring_enabled":false}`
+	path := filepath.Join(root, "chosen.yaml")
+	const document = `schema_version: 1
+poll_interval: 3s
+transaction_timeout: 1s
+stale_after: 10s
+monitoring_enabled: false
+`
 	if err := os.WriteFile(path, []byte(document), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -55,10 +60,10 @@ func TestExplicitDirectConfigurationIsNotReplacedOrRewritten(t *testing.T) {
 	if err != nil || string(data) != document {
 		t.Fatal("active configuration was rewritten:", err)
 	}
-	if _, err := DirectConfig(filepath.Join(root, "missing.json")); err == nil {
+	if _, err := DirectConfig(filepath.Join(root, "missing.yaml")); err == nil {
 		t.Fatal("missing explicit configuration silently used USB defaults")
 	}
-	if err := os.WriteFile(path, []byte(`{"schema_version":99}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("schema_version: 99\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := DirectConfig(path); err == nil {

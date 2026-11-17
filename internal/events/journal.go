@@ -29,9 +29,9 @@ type Record struct {
 }
 
 type Options struct {
-	Directory    string `json:"directory"`
-	MaxFileBytes int64  `json:"max_file_bytes"`
-	MaxFiles     int    `json:"max_files"`
+	Directory    string `json:"directory" yaml:"directory"`
+	MaxFileBytes int64  `json:"max_file_bytes" yaml:"max_file_bytes"`
+	MaxFiles     int    `json:"max_files" yaml:"max_files"`
 }
 
 func (o Options) Validate() error {

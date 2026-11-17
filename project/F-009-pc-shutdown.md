@@ -18,7 +18,7 @@ Desktop settings require explicit desktop IPC/file configuration and persist bef
 
 - Entry points: `internal/policy`, `internal/platform/shutdown_windows.go`, `internal/notifications/commands.go` and root `main.go`.
 - Automatic evaluation uses only fresh verified on-battery samples. Independently selected triggers: observed outage duration and the verified device low-battery flag. Capacity-based shutdown is not implemented.
-- Do not use estimated capacity, stale readings, communication failures or guessed voltage thresholds.
+- Do not use estimated capacity, stale readings, communication failures or guessed voltage thresholds. The voltage-derived capacity display in [F-002](F-002-telemetry.md) is not a shutdown trigger.
 - Separate trigger qualification from a configured cancellation countdown. Low battery never bypasses the countdown. No active timing values are chosen implicitly.
 - States: disabled, armed, pending, requesting, requested, failed, blocked. Record trigger, deadline, cancellation and OS error.
 - A single serialized controller owns transitions. Immediately before requesting shutdown, recheck latest sample freshness, on-battery state, policy version and cancellation state.
@@ -27,6 +27,12 @@ Desktop settings require explicit desktop IPC/file configuration and persist bef
 - One OS request per observed outage/controller lifetime. Failed requests enter a visible failed state without rapid retries; restart must requalify from new samples and the full configured delay.
 - Once Windows accepts the request, cancellation is not promised. Explain this boundary in UI and logs.
 - PC shutdown does not require or imply UPS output control. Closing the desktop window hides it; explicit Quit stops only desktop-owned monitoring, not daemon policy execution.
+
+### Dedicated desktop Shutdown tab - 2026-11-16
+
+The desktop's Shutdown tab groups current policy status/countdown, confirmed manual shutdown/cancel and the existing policy editor. In daemon mode, saving still uses authorized `/policy` IPC, persists the dedicated desktop-policy file before activation and hot-applies through the controller; no main YAML edit or daemon restart is performed. Trigger-specific delays remain unsupported; the current model uses an outage threshold, optional verified low-battery trigger and shared cancellation countdown. No backend policy semantics or power defaults changed.
+
+The Shutdown-tab implementation and full `go test .\...` suite passed on 2026-11-16. Live daemon reload/reconnection and any real shutdown remain unverified.
 
 ## Acceptance and tests
 

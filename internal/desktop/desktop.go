@@ -22,7 +22,7 @@ import (
 
 	"upsmart/internal/control"
 	"upsmart/internal/policy"
-	"upsmart/internal/state"
+	"upsmart/internal/ups"
 )
 
 type API interface {
@@ -30,49 +30,37 @@ type API interface {
 }
 
 type UI struct {
-	app       fyne.App
-	Window    fyne.Window
-	api       API
-	ctx       context.Context
-	cancel    context.CancelFunc
-	closed    atomic.Bool
-	status    *widget.Label
-	source    *widget.Label
-	footer    *widget.Label
-	power     *widget.Label
-	policy    *widget.Label
-	elapsed   *widget.Label
-	warnings  *widget.Label
-	hardware  *widget.Entry
-	events    *widget.Entry
-	tabs      *container.AppTabs
-	shutdown  *widget.Button
-	cancelBtn *widget.Button
-	values    map[string]*widget.Label
-	lights    map[string]*canvas.Circle
-	flow      *widget.Label
-	last      control.Snapshot
-	started   time.Time
+	app        fyne.App
+	Window     fyne.Window
+	api        API
+	ctx        context.Context
+	cancel     context.CancelFunc
+	closed     atomic.Bool
+	policy     *widget.Label
+	policyNote *widget.Label
+	elapsed    *widget.Label
+	events     *widget.RichText
+	tabs       *container.AppTabs
+	shutdown   *widget.Button
+	cancelBtn  *widget.Button
+	values     map[string]*widget.Label
+	lights     map[string]*canvas.Circle
+	flow       *widget.Label
+	last       control.Snapshot
 }
 
 func New(app fyne.App, api API) *UI {
 	ctx, cancel := context.WithCancel(context.Background())
 	u := &UI{app: app, api: api, ctx: ctx, cancel: cancel, values: make(map[string]*widget.Label),
-		lights: make(map[string]*canvas.Circle), started: time.Now()}
+		lights: make(map[string]*canvas.Circle)}
 	u.Window = app.NewWindow("UPSmart Monitor")
 	u.Window.SetIcon(theme.ComputerIcon())
-	u.Window.Resize(fyne.NewSize(900, 720))
-	u.status = widget.NewLabel("Backend not connected. Start a daemon or use direct USB; no Windows service is required.")
-	u.source = widget.NewLabel("Connection source: not selected")
-	u.footer = widget.NewLabel("Closing hides to the tray. Quit stops only desktop-owned monitoring, never a daemon.")
-	u.footer.Wrapping = fyne.TextWrapWord
-	u.status.Wrapping = fyne.TextWrapWord
-	u.power = widget.NewLabel("Power: unknown")
+	u.Window.Resize(fyne.NewSize(800, 480))
 	u.policy = widget.NewLabel("PC shutdown policy: unknown")
 	u.policy.Wrapping = fyne.TextWrapWord
+	u.policyNote = widget.NewLabel("Shutdown settings are saved by the active monitor and applied immediately.")
+	u.policyNote.Wrapping = fyne.TextWrapWord
 	u.elapsed = widget.NewLabel("Observed outage: unavailable | Countdown: unavailable")
-	u.warnings = widget.NewLabel("")
-	u.warnings.Wrapping = fyne.TextWrapWord
 	u.flow = widget.NewLabelWithStyle("AC input  -->  UPS  -->  Output\nBattery state unavailable", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	u.flow.Wrapping = fyne.TextWrapWord
 	input := u.reading("input_voltage", "Input voltage")
@@ -87,7 +75,6 @@ func New(app fyne.App, api API) *UI {
 		u.indicator("normal", "No reported UPS fault"),
 		u.indicator("mains", "Mains verified"),
 		u.indicator("battery", "Low battery flag"),
-		u.indicator("shutdown", "Shutdown pending"),
 		widget.NewLabel("Self-test status: unavailable"))
 	u.shutdown = widget.NewButtonWithIcon("Shutdown Windows...", theme.MediaStopIcon(), u.confirmShutdown)
 	u.shutdown.Importance = widget.DangerImportance
@@ -98,34 +85,41 @@ func New(app fyne.App, api API) *UI {
 		container.NewGridWithColumns(3, input, container.NewCenter(u.flow), output),
 		container.NewGridWithColumns(2, frequency, load),
 		container.NewGridWithColumns(3, battery, temperature, capacity),
-		widget.NewSeparator(), lights, u.elapsed, u.policy,
-		container.NewHBox(u.shutdown, u.cancelBtn),
-		widget.NewLabel("Non-forced Windows shutdown only. UPS output control is unavailable."),
-		u.warnings)
-	u.events = widget.NewMultiLineEntry()
+		widget.NewSeparator(), lights)
+	u.events = widget.NewRichText(&widget.TextSegment{
+		Style: widget.RichTextStyle{ColorName: theme.ColorNameForeground},
+	})
 	u.events.Wrapping = fyne.TextWrapWord
-	u.events.Disable()
-	u.hardware = widget.NewMultiLineEntry()
-	u.hardware.Wrapping = fyne.TextWrapWord
-	u.hardware.Disable()
+	u.events.Scroll = fyne.ScrollVerticalOnly
+	settings := container.NewVBox(
+		widget.NewCard("General settings", "Not editable in this desktop",
+			widget.NewLabel("USB, hardware, Telegram and account settings remain in the active monitor's configuration. Shutdown policy is managed on the Shutdown tab.")),
+	)
+	shutdown := container.NewVBox(
+		widget.NewCard("Shutdown policy", "Configured and applied by the active monitor",
+			container.NewVBox(
+				u.policy,
+				u.elapsed,
+				u.policyNote,
+				widget.NewButtonWithIcon("Configure shutdown policy...", theme.SettingsIcon(), u.settings),
+			)),
+		widget.NewCard("Manual shutdown", "Confirmed, non-forced Windows shutdown",
+			container.NewVBox(
+				container.NewHBox(u.shutdown, u.cancelBtn),
+				widget.NewLabel("Cancel works only before Windows accepts the request. UPS output control is unavailable."),
+			)),
+	)
 	u.tabs = container.NewAppTabs(
 		container.NewTabItem("Data View", container.NewVScroll(data)),
-		container.NewTabItem("PC Hardware", u.hardware),
-		container.NewTabItem("Event Log", u.events))
-	toolbar := widget.NewToolbar(
-		widget.NewToolbarAction(theme.SettingsIcon(), u.settings),
-		widget.NewToolbarAction(theme.HistoryIcon(), func() { u.tabs.SelectIndex(2) }),
-		widget.NewToolbarSpacer(),
-		widget.NewToolbarAction(theme.InfoIcon(), func() {
-			dialog.ShowInformation("About UPSmart Monitor", "Independent ARES AR2000 monitor\nFyne desktop / shared Go monitoring engine\nDaemon preferred; direct USB only with exclusive ownership\nDesktop controls: local Windows account only\nTelegram: checking commands and notifications only\nNo PC hardware temperature monitoring.", u.Window)
-		}))
-	header := container.NewVBox(widget.NewLabelWithStyle("UPSmart Monitor", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), toolbar, u.source, u.status, u.power)
-	u.Window.SetContent(container.NewBorder(header, u.footer, nil, nil, u.tabs))
+		container.NewTabItem("Setting", container.NewVScroll(settings)),
+		container.NewTabItem("Shutdown", container.NewVScroll(shutdown)),
+		container.NewTabItem("Log", u.events))
+	u.Window.SetContent(u.tabs)
 	if desktop, ok := app.(fynedesktop.App); ok {
 		desktop.SetSystemTrayIcon(theme.ComputerIcon())
 		desktop.SetSystemTrayMenu(fyne.NewMenu("UPSmart Monitor",
 			fyne.NewMenuItem("Show UPSmart", u.Show),
-			fyne.NewMenuItem("Settings", func() { u.Show(); u.settings() }),
+			fyne.NewMenuItem("Settings", func() { u.Show(); u.tabs.SelectIndex(1) }),
 			fyne.NewMenuItemSeparator(),
 			fyne.NewMenuItem("Quit desktop", u.Quit)))
 		desktop.SetSystemTrayWindow(u.Window)
@@ -155,11 +149,9 @@ func (u *UI) Show() { u.Window.Show(); u.Window.RequestFocus() }
 
 func (u *UI) SetDirect(direct bool) {
 	if direct {
-		u.source.SetText("Connection source: Direct USB (desktop owns monitoring)")
-		u.footer.SetText("Closing hides to the tray and keeps monitoring. Quit stops direct USB monitoring and PC shutdown protection.")
+		u.policyNote.SetText("Direct mode: saved in this user's desktop policy and applied immediately.")
 	} else {
-		u.source.SetText("Connection source: Daemon / existing monitor (local named pipe)")
-		u.footer.SetText("Closing hides to the tray. Quit exits only this desktop; daemon monitoring continues.")
+		u.policyNote.SetText("Daemon mode: saved to the daemon's dedicated shutdown-policy file and applied immediately. The main YAML is unchanged.")
 	}
 }
 
@@ -176,7 +168,6 @@ func (u *UI) Quit() {
 	if closer, ok := u.api.(io.Closer); ok {
 		u.shutdown.Disable()
 		u.cancelBtn.Disable()
-		u.status.SetText("Closing desktop; waiting for desktop-owned monitoring to stop...")
 		go func() {
 			err := closer.Close()
 			fyne.Do(func() {
@@ -224,8 +215,6 @@ func (u *UI) Apply(snapshot control.Snapshot, err error) {
 		err = fmt.Errorf("unsupported backend snapshot schema %d", snapshot.UPS.SchemaVersion)
 	}
 	if err != nil {
-		u.status.SetText("Backend unavailable: " + err.Error())
-		u.power.SetText("Power: unknown; no current verification")
 		u.policy.SetText("Policy status unknown. A backend countdown may still be active.")
 		u.elapsed.SetText("Observed outage: unavailable | Countdown: unknown")
 		u.flow.SetText("AC input  --?--  UPS  --?--  Output\nNo verified power flow")
@@ -237,21 +226,29 @@ func (u *UI) Apply(snapshot control.Snapshot, err error) {
 		}
 		u.shutdown.Disable()
 		u.cancelBtn.Disable()
-		u.hardware.SetText("Backend unavailable; hardware data is not current.")
-		u.events.SetText("Backend unavailable; event history cannot be refreshed.")
+		u.setEventLog("Backend unavailable; event history cannot be refreshed.")
 		return
 	}
 	u.last = snapshot
 	s := snapshot.UPS
 	fresh := s.Connection.State == "connected" && s.Telemetry != nil && !s.Telemetry.Stale
-	u.status.SetText(fmt.Sprintf("Backend connected | UPS: %s | Sample: %s | Desktop runtime: %s", s.Connection.State, sampleTime(s), time.Since(u.started).Truncate(time.Second)))
-	u.power.SetText(fmt.Sprintf("Power: %s | Low battery: %s | Fault: %s", s.Power.Mode, flag(s.Power.LowBattery, fresh), flag(s.Power.Fault, fresh)))
 	for key, label := range u.values {
 		text := "Unavailable"
 		if s.Telemetry != nil {
-			if m, ok := s.Telemetry.Measurements[key]; ok {
+			m, ok := s.Telemetry.Measurements[key]
+			if key == "battery_capacity" && (!ok || (m.Value == nil && m.Quality == "unavailable")) {
+				if voltage, found := s.Telemetry.Measurements["battery_voltage"]; found &&
+					voltage.Value != nil && voltage.Quality == "reported" {
+					m = ups.EstimateBatteryCapacity(*voltage.Value)
+					ok = m.Value != nil
+				}
+			}
+			if ok {
 				if m.Value != nil {
 					text = fmt.Sprintf("%.1f %s", *m.Value, m.Unit)
+					if m.Quality == "estimated" {
+						text += " (estimated)"
+					}
 					if !fresh {
 						text += " (last known)"
 					}
@@ -266,7 +263,6 @@ func (u *UI) Apply(snapshot control.Snapshot, err error) {
 	u.light("normal", fresh && s.Power.Fault != nil, s.Power.Fault != nil && !*s.Power.Fault)
 	u.light("mains", fresh && s.Power.Mode != "unknown", s.Power.Mode == "online")
 	u.light("battery", fresh && s.Power.LowBattery != nil, s.Power.LowBattery != nil && *s.Power.LowBattery)
-	u.light("shutdown", true, s.Policy.State == "pending")
 	if fresh && s.Power.Mode == "on_battery" {
 		u.flow.SetText("AC input unavailable\nBattery  -->  UPS  -->  Output")
 	} else if fresh && s.Power.Mode == "online" {
@@ -297,7 +293,6 @@ func (u *UI) Apply(snapshot control.Snapshot, err error) {
 		text += " | " + *s.Policy.Outcome
 	}
 	u.policy.SetText(text)
-	u.warnings.SetText(strings.Join(s.Health.Warnings, "\n"))
 	terminal := s.Policy.State == "requested" || s.Policy.State == "failed" || s.Policy.State == "dry_run"
 	u.shutdown.Disable()
 	u.cancelBtn.Disable()
@@ -311,36 +306,18 @@ func (u *UI) Apply(snapshot control.Snapshot, err error) {
 	for _, event := range snapshot.Events.Items {
 		fmt.Fprintf(&events, "%s  [%s] %s\n", event.Time.Local().Format("2006-01-02 15:04:05"), event.Severity, event.Message)
 	}
-	if text := events.String(); u.events.Text != text {
-		u.events.SetText(text)
-	}
-	var hardware bytes.Buffer
-	if len(snapshot.Hardware.Data) > 0 && string(snapshot.Hardware.Data) != "null" {
-		if err := json.Indent(&hardware, snapshot.Hardware.Data, "", "  "); err != nil {
-			u.hardware.SetText("Invalid cached hardware data: " + err.Error())
-			return
-		}
-	}
-	if text := fmt.Sprintf("Hardware: %s | stale: %t\n%s\n%s", snapshot.Hardware.Mode, snapshot.Hardware.Stale, snapshot.Hardware.Error, hardware.String()); u.hardware.Text != text {
-		u.hardware.SetText(text)
-	}
+	u.setEventLog(events.String())
 }
 
-func sampleTime(s state.Snapshot) string {
-	if s.Connection.LastSuccess == nil {
-		return "none"
+func (u *UI) setEventLog(text string) {
+	if u.events.String() == text {
+		return
 	}
-	return s.Connection.LastSuccess.Local().Format("15:04:05")
-}
-
-func flag(value *bool, fresh bool) string {
-	if !fresh || value == nil {
-		return "unknown"
-	}
-	if *value {
-		return "yes"
-	}
-	return "no"
+	u.events.Segments = []widget.RichTextSegment{&widget.TextSegment{
+		Text:  text,
+		Style: widget.RichTextStyle{ColorName: theme.ColorNameForeground},
+	}}
+	u.events.Refresh()
 }
 
 func (u *UI) light(key string, known, active bool) {
@@ -349,7 +326,7 @@ func (u *UI) light(key string, known, active bool) {
 		c = color.NRGBA{R: 80, G: 95, B: 110, A: 255}
 		if active {
 			c = color.NRGBA{R: 45, G: 170, B: 80, A: 255}
-			if key == "battery" || key == "shutdown" {
+			if key == "battery" {
 				c = color.NRGBA{R: 220, G: 100, B: 30, A: 255}
 			}
 		}

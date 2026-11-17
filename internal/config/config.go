@@ -1,12 +1,11 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"time"
+
+	"github.com/thought-machine/go-flags"
 
 	"upsmart/internal/control"
 	"upsmart/internal/events"
@@ -15,20 +14,20 @@ import (
 )
 
 type Config struct {
-	SchemaVersion      int                    `json:"schema_version"`
-	PollInterval       string                 `json:"poll_interval"`
-	TransactionTimeout string                 `json:"transaction_timeout"`
-	StaleAfter         string                 `json:"stale_after"`
-	MonitoringEnabled  bool                   `json:"monitoring_enabled"`
-	EventHistory       *events.Options        `json:"event_history,omitempty"`
-	Hardware           *HardwareOptions       `json:"hardware,omitempty"`
-	Telegram           *notifications.Options `json:"telegram,omitempty"`
-	PowerControl       *policy.Options        `json:"power_control,omitempty"`
-	Desktop            *control.Options       `json:"desktop,omitempty"`
+	SchemaVersion      int                    `json:"schema_version" yaml:"schema_version"`
+	PollInterval       string                 `json:"poll_interval" yaml:"poll_interval"`
+	TransactionTimeout string                 `json:"transaction_timeout" yaml:"transaction_timeout"`
+	StaleAfter         string                 `json:"stale_after" yaml:"stale_after"`
+	MonitoringEnabled  bool                   `json:"monitoring_enabled" yaml:"monitoring_enabled"`
+	EventHistory       *events.Options        `json:"event_history,omitempty" yaml:"event_history,omitempty"`
+	Hardware           *HardwareOptions       `json:"hardware,omitempty" yaml:"hardware,omitempty"`
+	Telegram           *notifications.Options `json:"telegram,omitempty" yaml:"telegram,omitempty"`
+	PowerControl       *policy.Options        `json:"power_control,omitempty" yaml:"power_control,omitempty"`
+	Desktop            *control.Options       `json:"desktop,omitempty" yaml:"desktop,omitempty"`
 }
 
 type HardwareOptions struct {
-	Interval string `json:"interval"`
+	Interval string `json:"interval" yaml:"interval"`
 }
 
 func (o HardwareOptions) Duration() (time.Duration, error) {
@@ -36,29 +35,15 @@ func (o HardwareOptions) Duration() (time.Duration, error) {
 }
 
 func Load(path string) (Config, error) {
-	var c Config
-	f, err := os.Open(path)
+	args, err := argumentsFromFile(path)
 	if err != nil {
-		return c, fmt.Errorf("open config (copy config.example.json to a local config first): %w", err)
+		return Config{}, err
 	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return c, fmt.Errorf("inspect config: %w", err)
+	var parameters Parameters
+	if _, err := flags.NewParser(&parameters, flags.None).ParseArgs(args); err != nil {
+		return Config{}, err
 	}
-	if info.Size() > 65536 {
-		return c, errors.New("config exceeds 64 KiB")
-	}
-	d := json.NewDecoder(io.LimitReader(f, 65537))
-	d.DisallowUnknownFields()
-	if err := d.Decode(&c); err != nil {
-		return c, fmt.Errorf("decode config: %w", err)
-	}
-	var extra any
-	if err := d.Decode(&extra); !errors.Is(err, io.EOF) {
-		return c, errors.New("config must contain exactly one JSON object")
-	}
-	return c.Effective()
+	return parameters.Config().Effective()
 }
 
 func (c Config) Effective() (Config, error) {

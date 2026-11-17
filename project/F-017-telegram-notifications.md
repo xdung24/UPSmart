@@ -1,12 +1,41 @@
 # F-017 - Telegram notifications
 
-Updated: 2026-11-16 | Priority: P1 | Status: Event sender and authorized checking-only commands tested; no live delivery
+Updated: 2026-11-16 | Priority: P1 | Status: Direct sender, optional rdpwatcher relay and checking-only commands mock-tested; no live delivery
+
+## Optional rdpwatcher relay - 2026-11-16
+
+Người dùng chọn thêm cách gửi thông báo qua API của rdpwatcher đang quản lý nhóm Telegram, thay vì để UPSmart tự giữ bot token và gửi trực tiếp. Cấu hình này dùng được cho daemon và desktop standalone vì cùng chạy shared monitoring engine.
+
+Current flat configuration (selected later on 2026-11-16 to match rdpproxy):
+
+```yaml
+notify-addr: 127.0.0.1:50061
+telegram-events: [startup, connected, connection_error, power_changed, low_battery_changed, fault_changed]
+```
+
+These also work as daemon CLI flags; repeat `--telegram-events` for multiple events. Current parameter/default/legacy compatibility contracts are in [F-008](F-008-configuration.md#current-rdpproxy-style-options---2026-11-16). Older nested examples/results below are historical or remain readable through legacy compatibility. The service now uses LocalSystem by explicit choice; earlier LocalService secret-provisioning notes are historical, not evidence that the new account was tested.
+
+- Start/configure rdpwatcher separately with `--notify-listen 127.0.0.1:50061` (or its matching YAML option). Use its actual listener address if different. The relay owns the bot credentials and destination group; UPSmart sends only message text.
+- `notify-addr` requires explicit `host:port` (IPv6 uses brackets), not a URL. It is mutually exclusive with `telegram-token-env`, `telegram-chat-id` and `telegram-allowed-user-ids`. Empty/omitted relay address retains direct-mode validation; omitting all notification parameters disables delivery.
+- Notifications only: no UPSmart bot command poller is started in relay mode. This avoids competing with rdpwatcher's existing bot polling. Direct mode retains its optional checking commands.
+- Existing rdpwatcher serves **plaintext, unauthenticated gRPC**. Prefer loopback; do not expose its listener to untrusted networks. Remote use requires a separately secured trusted network/tunnel; this client adds no TLS/authentication feature.
+- `internal/notifications/relay.go` calls `/notify.Notifier/SendMessage` using the locally generated typed contract in `internal/notifications/relaypb/notify.proto`: request `message` field 1; response `sent` field 1 and `error` field 2. No dependency on a sibling checkout or changes to rdp-ex are required.
+- rdpwatcher uses legacy Telegram Markdown, so UPSmart escapes formatting characters and bounds the escaped message to 3,500 runes. Direct mode remains plain text.
+- Both transports share event selection, live-only deduplication, 64-item queue, expiry, send spacing and three-attempt maximum. Each relay call has a ten-second timeout, cancellation and a 32 KiB response bound. The connection is lazy and closes with the worker; an unavailable relay does not block UPS monitoring or cause fallback to direct Telegram.
+- Selected transient gRPC errors retry within existing budgets. A `sent:false` or nonempty response error drops the event with visible degraded status, without retrying an unclassified upstream failure; later events may recover. Invalid service/authentication/setup errors block the sender until restart. Raw RPC/relay errors are never published because they may contain Telegram credentials.
+- `last_success` means the relay reported `sent:true` without an error, **not independent Telegram acceptance or a read receipt**. The inspected rdpwatcher implementation checks Telegram HTTP status but does not inspect its JSON `ok` field; this upstream limitation is not fixed or hidden by UPSmart. Ambiguous retries can duplicate messages.
+
+Acceptance TG-08: relay mode needs no bot credentials, sends the selected live message through the configured gRPC endpoint, rejects mixed direct/relay settings, handles negative acknowledgements explicitly, bounds retries/payloads and cancels promptly without affecting direct delivery.
+
+2026-11-16 actual checks: full `go test .\...` and `go vet .\...` passed. `go test -count=5 .\internal\notifications .\internal\config` passed. Windows amd64 daemon (CGO disabled) and desktop (internal-linker Windows GUI build) compiled to temporary session outputs without replacing existing binaries. Loopback fake-gRPC tests cover exact payload/Markdown, event selection/deduplication, missing command support, negative/contradictory/empty responses, credential-safe errors, unavailable-service retry/recovery, wrong service, oversized replies, cancellation, expiry and the exact escaped text bound. Existing direct HTTP tests pass.
+
+Assessment: configuration and relay behavior are mock-verified. No active local/example configuration was changed, monitor restarted, rdpwatcher contacted or real Telegram message sent. Next: configure the actual listener and event selection locally, restart the owning monitor, then obtain approval for one deliberate live-message test. Service-account network access and real Telegram receipt remain pending.
 
 ## Current scope: checking only
 
-The user selected a primary Fyne desktop and Telegram checking/notifications, then removed web support on 2026-11-16. This supersedes the earlier shutdown-command section below: `/shutdown`, `/confirm` and `/cancel` no longer call any policy action and reply that controls are desktop-only.
+The user selected a primary Fyne desktop and Telegram checking/notifications, then removed web support on 2026-11-16. In direct mode, this supersedes the earlier shutdown-command section below: `/shutdown`, `/confirm` and `/cancel` no longer call any policy action and reply that controls are desktop-only. Relay mode above supports notifications only.
 
-Optional `telegram.allowed_user_ids` (1-16 positive unique sender IDs) enables outbound command polling independently of `power_control.manual`; numeric `chat_id` plus sender allowlist are required. Omission retains notification-only behavior. `/status`, `/ups` and `/battery` return cached UPS/policy information; `/hardware` returns bounded cached hardware information; `/help` explains this readonly boundary. Exact commands without `@botname` are supported.
+Optional `telegram-allowed-user-ids` (1-16 positive unique sender IDs) enables outbound command polling independently of `manual-shutdown`; numeric `telegram-chat-id` plus sender allowlist are required. Omission retains notification-only behavior. `/status`, `/ups` and `/battery` return cached UPS/policy information; `/hardware` returns bounded cached hardware information; `/help` explains this readonly boundary. Exact commands without `@botname` are supported.
 
 Authentication, age/backlog/replay/forward/bot-source protections, fixed HTTPS routing, polling budgets and safe diagnostics remain. Tests passed for checking commands and explicit power-command rejection, unauthorized sources, pre-start backlog, duplicates, cancellation, redirects, malformed/oversized replies and rate limits. No live bot was connected.
 

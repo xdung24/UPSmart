@@ -7,23 +7,23 @@ import (
 )
 
 type Options struct {
-	Mode      string            `json:"mode"`
-	Automatic *AutomaticOptions `json:"automatic,omitempty"`
-	Manual    *ManualOptions    `json:"manual,omitempty"`
+	Mode      string            `json:"mode" yaml:"mode"`
+	Automatic *AutomaticOptions `json:"automatic,omitempty" yaml:"automatic,omitempty"`
+	Manual    *ManualOptions    `json:"manual,omitempty" yaml:"manual,omitempty"`
 }
 
 type AutomaticOptions struct {
-	Enabled     bool   `json:"enabled"`
-	OutageAfter string `json:"outage_after,omitempty"`
-	LowBattery  bool   `json:"low_battery"`
-	Countdown   string `json:"countdown"`
+	Enabled     bool   `json:"enabled" yaml:"enabled"`
+	OutageAfter string `json:"outage_after,omitempty" yaml:"outage_after,omitempty"`
+	LowBattery  bool   `json:"low_battery" yaml:"low_battery"`
+	Countdown   string `json:"countdown" yaml:"countdown"`
 }
 
 type ManualOptions struct {
-	Enabled   bool   `json:"enabled"`
-	Countdown string `json:"countdown"`
+	Enabled   bool   `json:"enabled" yaml:"enabled"`
+	Countdown string `json:"countdown" yaml:"countdown"`
 	// Retained for old configuration files; desktop access uses Windows SID ACLs.
-	AllowedUserIDs []int64 `json:"allowed_user_ids,omitempty"`
+	AllowedUserIDs []int64 `json:"allowed_user_ids,omitempty" yaml:"allowed_user_ids,omitempty"`
 }
 
 func (o Options) AutomaticEnabled() bool { return o.Automatic != nil && o.Automatic.Enabled }

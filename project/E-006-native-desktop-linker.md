@@ -9,8 +9,8 @@ Related: [F-018](F-018-native-desktop.md), [F-012](F-012-delivery-verification.m
 On this Windows amd64 machine, Go 1.26.5 with installed MinGW GCC 8.1.0 / linker 2.30 successfully compiled Fyne v2.8.2, but the default external-link GUI executable could not be launched.
 
 ```powershell
-go build -ldflags "-H=windowsgui" -o .\bin\upsmart-desktop.exe .\cmd\upsmart-desktop
-.\bin\upsmart-desktop.exe --smoke-test
+go build -ldflags "-H=windowsgui" -o .\bin\upsdesktop.exe .\cmd\upsdesktop
+.\bin\upsdesktop.exe --smoke-test
 ```
 
 Expected: show the desktop briefly, then exit 0 without backend requests. Actual: Windows loader error 193, “not a valid application for this OS platform.”
@@ -22,7 +22,7 @@ Evidence: the rejected executable was PE32+ / machine 0x8664, not a 32/64-bit ta
 The same sources and C compiler build correctly using Go's supported internal Windows linker:
 
 ```powershell
-go build -ldflags "-H=windowsgui -linkmode=internal" -o .\bin\upsmart-desktop.exe .\cmd\upsmart-desktop
+go build -ldflags "-H=windowsgui -linkmode=internal" -o .\bin\upsdesktop.exe .\cmd\upsdesktop
 ```
 
 The resulting executable launched a real native window titled `UPSmart Monitor`, then exited 0 in smoke mode. The controlled linker-path change establishes compatibility of the documented build path; a specific GCC/binutils defect or fix in newer compilers is not claimed.

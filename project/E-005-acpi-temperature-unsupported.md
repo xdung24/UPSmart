@@ -18,7 +18,7 @@ The upstream method queries `MSAcpi_ThermalZoneTemperature` in `root\WMI`, reads
 
 ```powershell
 Get-CimInstance -Namespace 'root\WMI' -ClassName MSAcpi_ThermalZoneTemperature
-.\bin\upsmart-next.exe read-hardware
+.\bin\upsdaemon.exe read-hardware
 ```
 
 Actual result at 19:48 local time: `acpi_temperatures: Not supported`. Diagnostic JSON exposed an unavailable ACPI record with that reason; verified CPU temperature remained null. Independent CPU/GPU/disk readings were preserved. Existing unrelated provider errors also kept the diagnostic exit status nonzero.

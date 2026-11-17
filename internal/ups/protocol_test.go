@@ -1,6 +1,8 @@
 package ups
 
 import (
+	"math"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -23,10 +25,40 @@ func TestParseQ1(t *testing.T) {
 				t.Errorf("%s = %+v; expected %v", key, m, expected)
 			}
 		}
-		capacity := got.Measurements["battery_capacity"]
-		if capacity.Value != nil || capacity.Quality != "unavailable" {
-			t.Fatalf("fabricated capacity: %+v", capacity)
+		assertEstimatedCapacity(t, got.Measurements["battery_capacity"], 100)
+	}
+}
+
+func TestBatteryCapacityEstimateUsesPackVoltageEndpoints(t *testing.T) {
+	tests := []struct {
+		voltage float64
+		want    float64
+	}{
+		{24, 0},
+		{25.55, 50},
+		{27.0, 100},
+		{23, 0},
+		{28, 100},
+	}
+	for _, tt := range tests {
+		raw := "(230.1 000.0 229.8 012 50.0 " + strconv.FormatFloat(tt.voltage, 'f', -1, 64) + " 31.0 00001001\r"
+		got, err := ParseQ1(raw)
+		if err != nil {
+			t.Fatal(err)
 		}
+		assertEstimatedCapacity(t, got.Measurements["battery_capacity"], tt.want)
+	}
+}
+
+func assertEstimatedCapacity(t *testing.T, measurement Measurement, want float64) {
+	t.Helper()
+	if measurement.Value == nil || measurement.Quality != "estimated" || measurement.Reason == "" ||
+		math.Abs(*measurement.Value-want) > 1e-9 {
+		got := "<nil>"
+		if measurement.Value != nil {
+			got = strconv.FormatFloat(*measurement.Value, 'f', 6, 64)
+		}
+		t.Errorf("capacity = %s (%+v); want %.1f%% estimated", got, measurement, want)
 	}
 }
 
@@ -62,6 +94,7 @@ func TestCapturedAR2000Status(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if got.Mode != "online" || got.LowBattery || got.Fault {
 		t.Fatalf("unexpected baseline flags: %+v", got)
 	}
@@ -71,6 +104,22 @@ func TestCapturedAR2000Status(t *testing.T) {
 	} {
 		if *got.Measurements[key].Value != expected {
 			t.Errorf("%s does not match captured field: %+v", key, got.Measurements[key])
+		}
+	}
+}
+
+func TestInvalidQ1FrameDiagnosticsAreBoundedAndEscaped(t *testing.T) {
+	for _, raw := range []string{"\x05", "", "\r\n\x00" + strings.Repeat("x", 200), strings.Repeat("x", 4096)} {
+		reading, err := ParseQ1(raw)
+		if err == nil || reading.Measurements != nil {
+			t.Fatalf("invalid frame became a reading: %+v, %v", reading, err)
+		}
+		message := err.Error()
+		if len(message) > 200 || strings.ContainsAny(message, "\r\n\x00") {
+			t.Fatalf("unbounded or unescaped frame diagnostic: %q", message)
+		}
+		if raw == "\x05" && !strings.Contains(message, `received 1 bytes, prefix "\x05"`) {
+			t.Fatalf("control response was hidden: %q", message)
 		}
 	}
 }

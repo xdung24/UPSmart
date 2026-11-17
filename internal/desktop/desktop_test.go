@@ -10,7 +10,10 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 
 	"upsmart/internal/control"
 	"upsmart/internal/policy"
@@ -81,13 +84,46 @@ func TestNativeViewShowsFreshUnavailableCountdownAndBackendLoss(t *testing.T) {
 	defer app.Quit()
 	api := new(unusedAPI)
 	ui := New(app, api)
+	if len(ui.tabs.Items) != 4 ||
+		ui.tabs.Items[0].Text != "Data View" ||
+		ui.tabs.Items[1].Text != "Setting" ||
+		ui.tabs.Items[2].Text != "Shutdown" ||
+		ui.tabs.Items[3].Text != "Log" {
+		t.Fatal("desktop tabs should be Data View, Setting, Shutdown, and Log")
+	}
+	if ui.tabs.SelectedIndex() != 0 {
+		t.Fatal("desktop should open on the Data View tab")
+	}
+	if ui.tabs.Items[3].Content != ui.events {
+		t.Fatal("Log tab should contain only the event log")
+	}
+	ui.setEventLog("Readable event")
+	if ui.events.String() != "Readable event" || len(ui.events.Segments) != 1 {
+		t.Fatal("event log text was not rendered")
+	}
+	segment, ok := ui.events.Segments[0].(*widget.TextSegment)
+	if !ok || segment.Style.ColorName != theme.ColorNameForeground {
+		t.Fatal("event log should use the current theme's foreground color")
+	}
+	_, isContainer := ui.Window.Canvas().Content().(*fyne.Container)
+	if isContainer || ui.Window.Canvas().Content() != ui.tabs {
+		t.Fatal("desktop content should consist of the tabs without a footer")
+	}
+	if size := ui.Window.Canvas().Size(); size.Height != 480 {
+		t.Fatalf("desktop window height = %v; want 480", size.Height)
+	}
+	dataView := ui.tabs.Items[0].Content.(*container.Scroll)
+	dataContent := dataView.Content.(*fyne.Container)
+	if len(dataContent.Objects) != 5 {
+		t.Fatal("Data View should not include a bottom text row")
+	}
 	ui.SetDirect(true)
-	if !strings.Contains(ui.source.Text, "Direct USB") || !strings.Contains(ui.footer.Text, "Quit stops direct USB") {
-		t.Fatal("direct ownership/quit semantics not disclosed")
+	if !strings.Contains(ui.policyNote.Text, "Direct mode") {
+		t.Fatal("direct-mode ownership/policy behavior not disclosed")
 	}
 	ui.SetDirect(false)
-	if !strings.Contains(ui.source.Text, "Daemon") || !strings.Contains(ui.footer.Text, "daemon monitoring") {
-		t.Fatal("daemon ownership/quit semantics not disclosed")
+	if !strings.Contains(ui.policyNote.Text, "daemon's dedicated shutdown-policy file") {
+		t.Fatal("daemon ownership/policy behavior not disclosed")
 	}
 	store := state.New(10*time.Second, true)
 	now := time.Now()
@@ -98,10 +134,26 @@ func TestNativeViewShowsFreshUnavailableCountdownAndBackendLoss(t *testing.T) {
 	deadline := now.Add(30 * time.Second)
 	s := store.Snapshot(now.Add(5 * time.Second))
 	s.Policy = policy.Status{Enabled: true, DryRun: true, ManualEnabled: true, State: "pending", Deadline: &deadline}
-	ui.Apply(control.Snapshot{UPS: s}, nil)
-	if ui.values["input_voltage"].Text != "230.0 V AC" || ui.values["battery_capacity"].Text == "100.0 %" {
-		t.Fatal("native data view fabricated or lost measurement")
+	s.Telemetry.Measurements["battery_capacity"] = ups.Measurement{
+		Unit: "%", Quality: "unavailable", Reason: "Not reported by the Q1 status query",
 	}
+	s.Health.Warnings = []string{"test warning"}
+	ui.Apply(control.Snapshot{UPS: s}, nil)
+	if ui.values["input_voltage"].Text != "230.0 V AC" || ui.values["battery_capacity"].Text != "100.0 % (estimated)" {
+		t.Fatalf("native data view lost or mislabeled the estimated capacity: voltage=%q capacity=%q",
+			ui.values["input_voltage"].Text, ui.values["battery_capacity"].Text)
+	}
+	s.Telemetry.Measurements["battery_capacity"] = ups.Measurement{
+		Unit: "%", Quality: "invalid", Reason: "Invalid reported capacity",
+	}
+	ui.Apply(control.Snapshot{UPS: s}, nil)
+	if ui.values["battery_capacity"].Text != "Unavailable - Invalid reported capacity" {
+		t.Fatal("legacy fallback must not override invalid capacity data:", ui.values["battery_capacity"].Text)
+	}
+	s.Telemetry.Measurements["battery_capacity"] = ups.Measurement{
+		Unit: "%", Quality: "unavailable", Reason: "Not reported by the Q1 status query",
+	}
+	ui.Apply(control.Snapshot{UPS: s}, nil)
 	if ui.elapsed.Text != "Observed outage: 5s | Shutdown countdown: 25s (at last refresh)" {
 		t.Fatal("native countdown does not follow backend time:", ui.elapsed.Text)
 	}

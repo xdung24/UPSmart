@@ -34,12 +34,14 @@ var (
 )
 
 // Options is enabled by its presence in the application's configuration.
+// RelayAddress selects rdpwatcher instead of direct bot access.
 // TokenEnv names an environment variable, not a token or a token file.
 type Options struct {
-	TokenEnv       string   `json:"token_env"`
-	ChatID         string   `json:"chat_id"`
-	Events         []string `json:"events"`
-	AllowedUserIDs []int64  `json:"allowed_user_ids,omitempty"`
+	RelayAddress   string   `json:"relay_address,omitempty" yaml:"relay_address,omitempty"`
+	TokenEnv       string   `json:"token_env,omitempty" yaml:"token_env,omitempty"`
+	ChatID         string   `json:"chat_id,omitempty" yaml:"chat_id,omitempty"`
+	Events         []string `json:"events" yaml:"events"`
+	AllowedUserIDs []int64  `json:"allowed_user_ids,omitempty" yaml:"allowed_user_ids,omitempty"`
 }
 
 func knownEvent(kind string) bool {
@@ -54,11 +56,20 @@ func knownEvent(kind string) bool {
 }
 
 func (o Options) Validate() error {
-	if !envNamePattern.MatchString(o.TokenEnv) {
-		return errors.New("notifications.token_env must name an environment variable")
-	}
-	if !chatPattern.MatchString(o.ChatID) {
-		return errors.New("notifications.chat_id must be a numeric destination or channel username")
+	if o.RelayAddress != "" {
+		if err := validateRelayAddress(o.RelayAddress); err != nil {
+			return err
+		}
+		if o.TokenEnv != "" || o.ChatID != "" || len(o.AllowedUserIDs) > 0 {
+			return errors.New("notifications.relay_address cannot be combined with token_env, chat_id or allowed_user_ids; relay supports notifications only")
+		}
+	} else {
+		if !envNamePattern.MatchString(o.TokenEnv) {
+			return errors.New("notifications.token_env must name an environment variable")
+		}
+		if !chatPattern.MatchString(o.ChatID) {
+			return errors.New("notifications.chat_id must be a numeric destination or channel username")
+		}
 	}
 	if len(o.Events) == 0 || len(o.Events) > 13 {
 		return errors.New("notifications.events must explicitly select supported monitoring events")
@@ -94,8 +105,7 @@ func (s *Sender) Reply(text string) error {
 		s.status.Dropped++
 		return errors.New("Telegram sender is stopped or blocked")
 	}
-	text = strings.ReplaceAll(truncate(text, maxTextRunes), s.token, "[redacted]")
-	text = strings.ReplaceAll(text, s.chatID, "[redacted]")
+	text = s.redact(truncate(text, maxTextRunes))
 	select {
 	case s.queue <- pending{text: text, expires: time.Now().Add(30 * time.Second)}:
 		return nil
@@ -106,7 +116,7 @@ func (s *Sender) Reply(text string) error {
 	}
 }
 
-// Status describes API acceptance, not delivery to or acknowledgement by a person.
+// Status describes API/relay acceptance, not delivery to or acknowledgement by a person.
 // Dropped includes queue overflow, expiry, failed delivery and cancellation.
 type Status struct {
 	Mode        string     `json:"mode"`
@@ -124,18 +134,19 @@ type pending struct {
 // Call Run once in a background goroutine and cancel its context on shutdown.
 // Live event sequences must be submitted in order within a service session.
 type Sender struct {
-	mu       sync.Mutex
-	status   Status
-	started  bool
-	closed   bool
-	selected map[string]bool
-	sessions map[string]uint64
-	order    []string
-	queue    chan pending
-	token    string
-	chatID   string
-	endpoint string
-	client   *http.Client
+	mu           sync.Mutex
+	status       Status
+	started      bool
+	closed       bool
+	selected     map[string]bool
+	sessions     map[string]uint64
+	order        []string
+	queue        chan pending
+	token        string
+	chatID       string
+	endpoint     string
+	client       *http.Client
+	relayAddress string
 
 	// Private injection points keep production routing and budgets fixed.
 	expiry      time.Duration
@@ -144,15 +155,19 @@ type Sender struct {
 	attempts    int
 }
 
-// New resolves the bot token from the process environment at initialization.
-// Missing or invalid secrets are rejected without including their values.
+// New resolves direct-mode bot credentials at initialization. Relay mode needs
+// no Telegram credentials and opens its connection only while Run is active.
 func New(options Options) (*Sender, error) {
 	if err := options.Validate(); err != nil {
 		return nil, err
 	}
-	token, exists := os.LookupEnv(options.TokenEnv)
-	if !exists || !tokenPattern.MatchString(token) {
-		return nil, errors.New("notifications bot token environment variable is missing or invalid")
+	var token string
+	if options.RelayAddress == "" {
+		var exists bool
+		token, exists = os.LookupEnv(options.TokenEnv)
+		if !exists || !tokenPattern.MatchString(token) {
+			return nil, errors.New("notifications bot token environment variable is missing or invalid")
+		}
 	}
 	selected := make(map[string]bool, len(options.Events))
 	for _, kind := range options.Events {
@@ -162,7 +177,8 @@ func New(options Options) (*Sender, error) {
 		status: Status{Mode: "enabled"}, selected: selected,
 		sessions: make(map[string]uint64), queue: make(chan pending, queueCapacity),
 		token: token, chatID: options.ChatID,
-		endpoint: "https://api.telegram.org/bot" + token + "/sendMessage",
+		relayAddress: options.RelayAddress,
+		endpoint:     "https://api.telegram.org/bot" + token + "/sendMessage",
 		client: &http.Client{
 			Timeout:       10 * time.Second,
 			CheckRedirect: noRedirect,
@@ -235,8 +251,7 @@ func (s *Sender) Submit(event events.Record) {
 	// Bound before replacement so even an unexpectedly large source error cannot
 	// make the queue retain large records or include an embedded credential.
 	message := truncate(event.Message, maxTextRunes)
-	message = strings.ReplaceAll(message, s.token, "[redacted]")
-	message = strings.ReplaceAll(message, s.chatID, "[redacted]")
+	message = s.redact(message)
 	text := "UPSmart\n" + event.Time.UTC().Format(time.RFC3339) + "\n" + event.Type + ": " + message
 	item := pending{text: truncate(text, maxTextRunes), expires: expires}
 	select {
@@ -246,6 +261,15 @@ func (s *Sender) Submit(event events.Record) {
 		s.status.Mode = "degraded"
 		s.status.Error = "Notification queue is full; events were dropped"
 	}
+}
+
+func (s *Sender) redact(text string) string {
+	for _, value := range []string{s.token, s.chatID} {
+		if value != "" {
+			text = strings.ReplaceAll(text, value, "[redacted]")
+		}
+	}
+	return text
 }
 
 func truncate(text string, limit int) string {
@@ -303,6 +327,22 @@ func (s *Sender) Run(ctx context.Context) {
 	}
 	client.CheckRedirect = noRedirect
 	defer client.CloseIdleConnections()
+	request := func(ctx context.Context, text string) (bool, bool, bool, time.Duration, string) {
+		return s.request(ctx, &client, text)
+	}
+	if s.relayAddress != "" {
+		conn, err := openRelay(s.relayAddress)
+		if err != nil {
+			s.mu.Lock()
+			s.status.Mode, s.status.Error = "blocked", "Notification relay client could not be initialized"
+			s.mu.Unlock()
+			return
+		}
+		defer conn.Close()
+		request = func(ctx context.Context, text string) (bool, bool, bool, time.Duration, string) {
+			return requestRelay(ctx, conn, text)
+		}
+	}
 	var nextAttempt time.Time
 	for {
 		if ctx.Err() != nil {
@@ -312,7 +352,7 @@ func (s *Sender) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case item := <-s.queue:
-			accepted, permanent, reason := s.deliver(ctx, &client, item, &nextAttempt)
+			accepted, permanent, reason := s.deliverWith(ctx, item, &nextAttempt, request)
 			s.mu.Lock()
 			if accepted {
 				now := time.Now().UTC()
@@ -347,7 +387,7 @@ func waitUntil(ctx context.Context, until time.Time) bool {
 	}
 }
 
-func (s *Sender) deliver(ctx context.Context, client *http.Client, item pending, nextAttempt *time.Time) (bool, bool, string) {
+func (s *Sender) deliverWith(ctx context.Context, item pending, nextAttempt *time.Time, request func(context.Context, string) (bool, bool, bool, time.Duration, string)) (bool, bool, string) {
 	deliveryCtx, cancel := context.WithDeadline(ctx, item.expires)
 	defer cancel()
 	reason := "Telegram delivery attempts exhausted"
@@ -355,7 +395,7 @@ func (s *Sender) deliver(ctx context.Context, client *http.Client, item pending,
 		if !waitUntil(deliveryCtx, *nextAttempt) {
 			return false, false, "Notification cancelled or expired before API acceptance"
 		}
-		accepted, permanent, retry, delay, failure := s.request(deliveryCtx, client, item.text)
+		accepted, permanent, retry, delay, failure := request(deliveryCtx, item.text)
 		*nextAttempt = time.Now().Add(s.minInterval)
 		if accepted || permanent || !retry {
 			return accepted, permanent, failure

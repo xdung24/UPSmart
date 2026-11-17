@@ -19,7 +19,7 @@ Environment: Windows amd64, Go 1.26.5, Fyne v2.8.2, documented internal-linker G
 ## Reproduction and expected behavior
 
 1. Build the GUI using the command in [F-018](F-018-native-desktop.md).
-2. Launch `bin\upsmart-desktop.exe --smoke-test`.
+2. Launch `bin\upsdesktop.exe --smoke-test`.
 3. Observe stderr and native window startup. The warning may not recur.
 
 Expected: native window/tray initialization without readiness errors. Actual: one observed tray warning with successful window startup/exit.

@@ -11,15 +11,15 @@ if not exist "bin" mkdir "bin"
 if errorlevel 1 goto failed
 
 echo Building desktop...
-go build -ldflags "-H=windowsgui -linkmode=internal" -o ".\bin\upsmart-desktop.exe" .\cmd\upsmart-desktop
+go build -ldflags "-H=windowsgui -linkmode=internal -extldflags=-static -s -w" -o ".\bin\upsdesktop.exe" .\cmd\upsdesktop
 if errorlevel 1 goto failed
 
 echo Building daemon...
 set "CGO_ENABLED=0"
-go build -o ".\bin\upsmart-next.exe" .\cmd\ups-daemon
+go build  -ldflags "-linkmode=internal -extldflags=-static -s -w" -o ".\bin\upsdaemon.exe" .\cmd\upsdaemon
 if errorlevel 1 goto failed
 
-echo Built bin\upsmart-desktop.exe and bin\upsmart-next.exe
+echo Built bin\upsdesktop.exe and bin\upsdaemon.exe
 popd
 exit /b 0
 

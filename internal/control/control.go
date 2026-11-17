@@ -18,11 +18,11 @@ import (
 	"upsmart/internal/state"
 )
 
-const PipeName = `\\.\pipe\UPSmartMonitor-Desktop`
+const PipeName = `\\.\pipe\UPSmart-Desktop`
 
 type Options struct {
-	UserSID      string `json:"user_sid,omitempty"`
-	SettingsFile string `json:"settings_file"`
+	UserSID      string `json:"user_sid,omitempty" yaml:"user_sid,omitempty"`
+	SettingsFile string `json:"settings_file" yaml:"settings_file"`
 }
 
 func (o Options) Validate() error {

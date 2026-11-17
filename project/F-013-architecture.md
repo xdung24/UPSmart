@@ -10,7 +10,7 @@ The application continues serving honest health information even when the device
 
 ## Proposed architecture
 
-Go was confirmed by the user. `cmd/ups-daemon/main.go` and direct mode in `cmd/upsmart-desktop/main.go` call the shared `internal/monitor.Run` lifecycle, composing configuration, USB, state/events, protected desktop IPC and optional hardware/Telegram workers. The opt-in shutdown candidate also composes `internal/policy` and the injectable `internal/platform` shutdown adapter. Earlier root-entry references below record the prior layout.
+Go was confirmed by the user. `cmd/upsdaemon/main.go` and direct mode in `cmd/upsdesktop/main.go` call the shared `internal/monitor.Run` lifecycle, composing configuration, USB, state/events, protected desktop IPC and optional hardware/Telegram workers. The opt-in shutdown candidate also composes `internal/policy` and the injectable `internal/platform` shutdown adapter. Earlier root-entry references below record the prior layout.
 
 Data flow: serialized transport -> protocol parser -> validated sample -> state reducer -> immutable snapshot. The reducer emits bounded events and policy inputs. Desktop IPC reads cached snapshots only. Only the policy controller can invoke an injected OS shutdown adapter.
 
@@ -73,7 +73,7 @@ Telemetry-to-policy-to-API and confirmed-command-to-dry-run tests pass with fake
 
 ### Native desktop separation - 2026-11-12
 
-[F-018](F-018-native-desktop.md) adds `cmd/upsmart-desktop`, `internal/desktop` and `internal/control`. Widgets read cached typed snapshots/events/hardware and submit confirmed policy operations through a protected Windows named pipe. With a daemon, desktop Quit leaves monitoring alone. The later dual-mode extension below supersedes service-client-only operation.
+[F-018](F-018-native-desktop.md) adds `cmd/upsdesktop`, `internal/desktop` and `internal/control`. Widgets read cached typed snapshots/events/hardware and submit confirmed policy operations through a protected Windows named pipe. With a daemon, desktop Quit leaves monitoring alone. The later dual-mode extension below supersedes service-client-only operation.
 
 The backend owns one optional pipe HTTP-framing server with account ACLs and no TCP listener. Independent Telegram workers use cached state. Bridge requests serialize policy edits/confirmation checks; controller state/dispatch remains independently serialized. Disk persistence occurs before activation, outside the snapshot lock. Cancelled queued requests do not execute; interrupted mutating requests disclose unknown acceptance rather than claiming no side effect.
 

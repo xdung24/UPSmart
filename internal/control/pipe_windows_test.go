@@ -15,7 +15,21 @@ import (
 )
 
 func TestNamedPipeRoundTripWithoutTCPOrHardware(t *testing.T) {
+	for _, mode := range []string{"console account", "explicit desktop account"} {
+		t.Run(mode, func(t *testing.T) { testNamedPipeRoundTrip(t, mode == "explicit desktop account") })
+	}
+}
+
+func testNamedPipeRoundTrip(t *testing.T, explicitUser bool) {
+	t.Helper()
 	options := Options{SettingsFile: filepath.Join(t.TempDir(), "policy.json")}
+	if explicitUser {
+		sid, err := CurrentUserSID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		options.UserSID = sid
+	}
 	path := fmt.Sprintf(`\\.\pipe\UPSmart-Tests-%d`, time.Now().UnixNano())
 	listener, err := listen(path, options)
 	if err != nil {

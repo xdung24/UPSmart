@@ -1,7 +1,15 @@
 package service
 
-import "context"
+import (
+	"context"
 
-const Name = "UPSmartMonitor"
+	systemservice "github.com/kardianos/service"
+)
+
+const Name = "UPSmart"
 
 type Application func(context.Context, func()) error
+
+func Interactive() bool {
+	return systemservice.Interactive()
+}

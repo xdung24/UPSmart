@@ -15,7 +15,7 @@ Physical disk utilization and read/write rates are unavailable on this PC. Logic
 2026-11-12, Windows 10 amd64, existing non-elevated session. Separate candidate binary; running monitor/configuration unchanged.
 
 ```powershell
-.\bin\upsmart-next.exe read-hardware
+.\bin\upsdaemon.exe read-hardware
 ```
 
 Expected: supported physical disk counters provide finite utilization/throughput; unsupported sources provide distinct reasons without discarding other measurements.

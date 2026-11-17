@@ -10,7 +10,8 @@ The user downloads/builds one executable, runs monitoring in console mode, compa
 
 ## Implementation
 
-- Current backend entry point: `cmd/ups-daemon/main.go`; desktop: `cmd/upsmart-desktop/main.go`. Earlier root-entry commands below record the previous layout.
+- Current backend entry point: `cmd/upsdaemon/main.go`; desktop: `cmd/upsdesktop/main.go`. Earlier root-entry commands below record the previous layout.
+- Current daemon delivery follows rdpproxy-style direct flags, flat YAML and LocalSystem service registration as explicitly chosen on 2026-11-16; see [F-006](F-006-windows-service.md#current-service-model-rdpproxy-alignment---2026-11-16) and [F-008](F-008-configuration.md#current-rdpproxy-style-options---2026-11-16). Full tests/vet, both Windows builds, built help and offline validation of example/root/bin configs passed. Local polling values were preserved; no service or monitor was started.
 - Target Windows amd64 with Go modules; commit dependency checksums if third-party dependencies are introduced. Prefer native Windows HID calls and avoid mandatory vendor DLLs, external web assets or CGO unless protocol evidence requires them.
 - Provide version/build information, example monitoring-only configuration, CLI help and administrator install/uninstall instructions.
 - Keep instructions as flat project feature documents; put lifecycle usage in [F-006](F-006-windows-service.md), configuration usage in [F-008](F-008-configuration.md) and quality evidence in [F-015](F-015-quality.md).
@@ -26,7 +27,7 @@ The user downloads/builds one executable, runs monitoring in console mode, compa
 - REL-03: validated hardware readings match independently decoded captures within device precision; discrepancies are documented.
 - REL-04: approved service install, restart, update and uninstall preserve intended configuration/history.
 - REL-05: release notes distinguish simulated, hardware-verified and unavailable functionality.
-- REL-06: no arguments starts console monitoring with the current directory's local configuration; missing/invalid configuration fails explicitly, while help exits successfully without starting hardware access.
+- REL-06: no arguments starts console mode using working-directory YAML over monitoring-disabled defaults. A missing file emits a notice; invalid existing configuration fails. Help/version/validation do not start hardware access.
 
 ## Decisions and boundaries
 
@@ -36,12 +37,12 @@ Go is confirmed. Supported Windows-version range, signing and distribution forma
 
 First milestone, 2026-11-12: built `bin/upsmart.exe` with Go 1.26.5 on Windows 10 Pro 10.0.19045 amd64 using only the standard library/system DLLs. Its live monitoring/browser evidence is historical and does not establish service-account behavior.
 
-Persistence/service candidate: built `bin/upsmart-next.exe` without replacing the original. It adds pinned `golang.org/x/sys v0.50.0` and `go.sum` for maintained Windows service/security APIs. Assets remain embedded; no vendor DLL or external frontend runtime is required.
+Persistence/service candidate: built `bin/upsdaemon.exe` without replacing the original. It adds pinned `golang.org/x/sys v0.50.0` and `go.sum` for maintained Windows service/security APIs. Assets remain embedded; no vendor DLL or external frontend runtime is required.
 
 ```powershell
-go build -o .\bin\upsmart-next.exe .
+go build -o .\bin\upsdaemon.exe .
 # Future approved test only: deliberately stop the current monitor/legacy UPSmart first.
-.\bin\upsmart-next.exe serve --config .\config.local.json
+.\bin\upsdaemon.exe serve --config .\config.local.json
 ```
 
 Use the configuration instructions in [F-008](F-008-configuration.md). With this machine's local configuration, open `http://127.0.0.1:18765`. Do not run legacy UPSmart and this monitor together; the replacement refuses detected legacy processes. No automatic shutdown protection is provided by this milestone.
@@ -54,16 +55,18 @@ Assessment: candidate code/build and filesystem/handler tests pass; this is not 
 
 ### Default startup and usage - 2026-11-12
 
-The user explicitly chose to start monitoring when no arguments are supplied. From the repository root, these now select `serve --config .\config.local.json`:
+Historical default-path/missing-file behavior below was superseded by the 2026-11-16 rdpproxy alignment linked above. Current console commands consistently use working-directory `config.yaml` over safe defaults.
+
+The user explicitly chose to start monitoring when no arguments are supplied. After the 2026-11-16 [YAML migration](F-008-configuration.md#yaml-configuration---2026-11-16), current no-argument daemon startup selects `serve --config .\config.yaml`:
 
 ```powershell
-go run .
-.\bin\upsmart-next.exe
+go run .\cmd\upsdaemon
+.\bin\upsdaemon.exe
 ```
 
 Air's existing empty argument list also follows this behavior; no Air configuration change was needed. Paths are relative to the process's current working directory, not the executable directory. The configuration's `monitoring_enabled` setting remains authoritative. Missing/invalid local configuration is an error, never a silent fallback to another policy.
 
-Explicit commands remain unchanged. `serve`/`validate` without `--config` still use `%ProgramData%\UPSmartMonitor\config.json`. Root `help`, `-h` and `--help` show readable commands and safety notes. Subcommand flag help also exits successfully, without a timestamped error.
+`serve`/`validate` without `--config` now use `%ProgramData%\UPSmart\config.yaml`. Root `help`, `-h` and `--help` show readable commands and safety notes. Subcommand flag help also exits successfully, without a timestamped error. Older JSON paths in the dated test records below describe historical runs, not current defaults.
 
 Four focused root-package tests passed: valid default startup invokes the injected monitor exactly once and propagates its outcome; invalid/missing local files produce errors; explicit validation uses its chosen file despite a broken local file. Tests do not start an actual listener or touch the UPS. Root vet, candidate build and actual `--help`/`serve --help` checks passed with exit status zero.
 
@@ -81,11 +84,11 @@ The historical cputemp adaptation and its embedded notice/footer link were subse
 
 ### Fyne native desktop candidate - 2026-11-12
 
-Separate `bin/upsmart-desktop.exe` builds using Fyne/CGO and the supported Go internal linker; the current direct command is in [F-018](F-018-native-desktop.md). The older external MinGW link fails Windows loading in this environment ([E-006](E-006-native-desktop-linker.md)). An actual native-window smoke launch exited 0 with backend polling disabled. Backend `bin/upsmart-next.exe` also builds with CGO disabled.
+Separate `bin/upsdesktop.exe` builds using Fyne/CGO and the supported Go internal linker; the current direct command is in [F-018](F-018-native-desktop.md). The older external MinGW link fails Windows loading in this environment ([E-006](E-006-native-desktop-linker.md)). An actual native-window smoke launch exited 0 with backend polling disabled. Backend `bin/upsdaemon.exe` also builds with CGO disabled.
 
 Build/startup evidence and exact connection configuration are in [F-018](F-018-native-desktop.md). GUI startup is not evidence that the existing backend was upgraded or a service installed: local configuration/processes remain unchanged. Daemon mode uses the configured named pipe; direct mode can monitor independently. Windows service installation is optional. Charts, general settings editors, visual/tray interaction, clean-machine redistribution/signing and LocalService rights remain pending; shutdown policy settings/controls are implemented.
 
-The concurrent daemon relocation was preserved. Build the current backend with `go build -o .\bin\upsmart-next.exe .\cmd\ups-daemon`, not the historical root-package command.
+The concurrent daemon relocation was preserved. Build the current backend with `go build -o .\bin\upsdaemon.exe .\cmd\upsdaemon`, not the historical root-package command.
 
 Windows build shortcut - 2026-11-12: root [build.cmd](../build.cmd) builds both candidates with local environment settings, the verified GUI linker flags and CGO disabled for the daemon. The shortened [README](../README.md) documents this entry point. Actual invocation from outside the project directory built both executables successfully; a missing-Go check returned exit 1 without a success message. The script starts no monitor/service and restores the caller's directory/environment.
 
