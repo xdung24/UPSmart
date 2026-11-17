@@ -1,6 +1,24 @@
 # F-017 - Telegram notifications
 
-Updated: 2026-11-16 | Priority: P1 | Status: Direct sender, optional rdpwatcher relay and checking-only commands mock-tested; no live delivery
+Updated: 2026-11-17 | Priority: P1 | Status: Local relay alerts configured; mock/offline checks passed; activation and live delivery pending
+
+## Selected power and connection alerts - 2026-11-17
+
+Người dùng chọn gửi thông báo khi mất điện, điện lưới trở lại và kết nối UPS phục hồi; xác nhận dùng relay rdpwatcher tại `127.0.0.1:50061`. Hai cấu hình cục bộ `config.yaml` và `bin/config.yaml` đã được bổ sung:
+
+```yaml
+notify-addr: 127.0.0.1:50061
+telegram-events: [power_changed, connection_error, connected]
+```
+
+- `power_changed` reports `Power mode: on_battery` on mains loss and `Power mode: online` on restoration. The first valid sample also reports the initial power mode; it is not proof of a restoration.
+- `connection_error` reports UPS read/communication failure; `connected` reports the first verified Q1 response and recovery after a failed read. A communication failure does not fabricate a mains outage. Identical repeated samples/failures are suppressed; changed error messages may produce additional failure events.
+- No periodic summary, startup event or bot command polling is selected. Relay credentials and destination remain managed by rdpwatcher. Internet/relay loss during an outage can prevent delivery; the existing two-minute expiry applies.
+- Both local files preserve monitoring/timing settings and leave shutdown disabled. These local files are ignored by Git; deployments must configure their own active YAML. A running daemon retains its existing configuration until restarted; an installed service may use a separate executable-adjacent copy. Desktop attached to a daemon uses that daemon's notifications, not the desktop's YAML.
+
+Actual checks on 2026-11-17: `go test .\internal\state .\internal\notifications .\internal\config` passed (notifications/config cached). `go run .\cmd\upsdaemon --validate -c .\config.yaml` and the same command for `.\bin\config.yaml` passed with PC shutdown disabled.
+
+Assessment: existing event handling required no code change; local selection is configured and offline-valid. No relay connection, live Telegram message, UPS interruption, service configuration change or process restart was performed. Next: restart the owning monitor with the selected configuration, then verify actual chat receipt under separately approved live checks. Do not equate configuration validation with active delivery.
 
 ## Optional rdpwatcher relay - 2026-11-16
 
@@ -47,7 +65,7 @@ The user configures their Telegram bot and destination locally, enables selected
 
 ## Requested scope and proposed notifications
 
-The user requested Telegram messages while monitoring. Exact triggers and cadence remain open; the proposed choices are:
+The user requested Telegram messages while monitoring. Power and connection alerts were selected on 2026-11-17 above; other triggers and summary cadence remain proposals:
 
 - Monitoring started, with a clear distinction between application startup and the first valid UPS sample.
 - Mains lost / UPS on battery, and mains restored.

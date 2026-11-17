@@ -30,6 +30,8 @@ The user opens the desktop to see readings, power flow, connection/UPS/mains/bat
 - Battery capacity is not reported by Q1; its user-calibrated display estimate is explicitly labeled and never used for shutdown. If an older daemon omits capacity or marks it unavailable but reports battery voltage, the desktop applies the shared estimator client-side; it does not override invalid capacity data or use missing/unreported voltage. Bypass topology and sensor semantics remain unavailable/unverified; screenshots are a workflow reference, not evidence that these measurements exist.
 - On 2026-11-17, the user requested removal of the bottom footer and a shorter initial window. The desktop now requests an 800x480 window with the tabs as the full content area; the tab contents retain their existing scrolling where needed.
 - On 2026-11-17, the user requested removal of the text at the bottom of Data View. Backend health-warning text is no longer displayed in that tab.
+- On 2026-11-17, the user requested an animated power-flow drawing in the Data View center block. The animation follows fresh mains-online or on-battery status; charge, bypass and inverter topology remain explicitly unreported because Q1 exposes no such fields.
+- On 2026-11-17, the user requested that the center animation also use the second row's space, with input/frequency and output/load stacked in narrower side columns.
 
 ## Technical design and first delivery
 
@@ -68,12 +70,18 @@ Extract the existing lifecycle into `internal/monitor` for console, SCM and desk
 - DESK-06: successful policy save persists before activation; failed save leaves active policy unchanged; pending/terminal controls cannot be silently reset.
 - DESK-07: no TCP/web listener is present; Telegram power commands cannot schedule/cancel anything.
 - DESK-15: the Shutdown tab exposes existing policy status, manual confirm/cancel and policy editing; updates use protected IPC and hot-apply without rewriting the main daemon YAML or restarting it.
+- DESK-16: the center power-flow schematic animates only for fresh verified mains/on-battery status, stops at unknown/stale status, and does not claim unreported charge, bypass or inverter state.
+- DESK-17: the center schematic spans the combined height of the input/frequency and output/load rows; the four readings remain in two side columns.
 
 ## Results and next steps
 
 Architecture confirmed with the user; no desktop code was present at planning time. GCC/CGO are available. Fyne v2.8.2 and go-winio v0.6.4 are pinned.
 
 Implemented: separate desktop executable, Data View/readings/conceptual power-flow/status lights, outage/countdown, event viewer, system tray Show/Settings/Quit and a Shutdown tab. The Shutdown tab edits the active policy with explicit dry-run/live confirmation; other USB/hardware/Telegram settings remain backend-file configuration. Charts, scheduling, battery management and import/export are not implemented or falsely exposed as working buttons.
+
+On 2026-11-17, added an animated center schematic: fresh online status animates the mains-to-output path; fresh on-battery status animates from the battery to output; stale or unknown status stops the animation. The schematic labels charge and bypass/inverter state as not reported, matching the current Q1 contract. Focused `go test .\internal\desktop` and `go vet .\internal\desktop` passed. Native visual comparison and live UPS behavior remain unverified.
+
+On 2026-11-17, combined the first two Data View rows into three columns: input/frequency and output/load stack at the sides while the schematic fills the center column. The schematic minimum height was increased to use that combined area. `go test .\internal\desktop` passed, including a layout-structure regression check; native visual comparison remains pending.
 
 The first IPC tests passed against an actual uniquely named Windows pipe with fake store/controller, no TCP listener and no hardware. Widget tests use Fyne's headless driver and check actual readings/units, unavailable capacity, backend-derived countdown, pending controls and connection-loss invalidation. On 2026-11-17, regression tests simulated an older daemon's reported 27.0 V with unavailable capacity and verified the current 27.0 V pack endpoint displays 100.0% estimated (an earlier 27.1 V endpoint displayed 96.8%); another test confirms the bottom of Data View has no text row, the footer is absent, and the window height is 480. `go test .\internal\desktop` passed after the latest UI adjustment. The full Go test suite passed before it and was not rerun. The native OpenGL/CGO executable build is a separate check, not implied by widget tests.
 

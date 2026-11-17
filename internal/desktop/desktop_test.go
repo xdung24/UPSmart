@@ -91,6 +91,7 @@ func TestNativeViewShowsFreshUnavailableCountdownAndBackendLoss(t *testing.T) {
 		ui.tabs.Items[3].Text != "Log" {
 		t.Fatal("desktop tabs should be Data View, Setting, Shutdown, and Log")
 	}
+
 	if ui.tabs.SelectedIndex() != 0 {
 		t.Fatal("desktop should open on the Data View tab")
 	}
@@ -114,8 +115,20 @@ func TestNativeViewShowsFreshUnavailableCountdownAndBackendLoss(t *testing.T) {
 	}
 	dataView := ui.tabs.Items[0].Content.(*container.Scroll)
 	dataContent := dataView.Content.(*fyne.Container)
-	if len(dataContent.Objects) != 5 {
-		t.Fatal("Data View should not include a bottom text row")
+	if len(dataContent.Objects) != 4 {
+		t.Fatal("Data View should use a combined power-flow and telemetry row without a bottom text row")
+	}
+	powerRow, ok := dataContent.Objects[0].(*fyne.Container)
+	if !ok || len(powerRow.Objects) != 3 {
+		t.Fatal("power-flow row should have equal left, center, and right columns")
+	}
+	left, leftOK := powerRow.Objects[0].(*fyne.Container)
+	center, centerOK := powerRow.Objects[1].(*fyne.Container)
+	right, rightOK := powerRow.Objects[2].(*fyne.Container)
+	if !leftOK || !centerOK || !rightOK ||
+		len(left.Objects) != 2 || len(center.Objects) != 1 || center.Objects[0] != ui.flow ||
+		len(right.Objects) != 2 || ui.flow.MinSize().Height < 200 {
+		t.Fatal("power-flow diagram should span both reading rows between the two side stacks")
 	}
 	ui.SetDirect(true)
 	if !strings.Contains(ui.policyNote.Text, "Direct mode") {
@@ -143,6 +156,9 @@ func TestNativeViewShowsFreshUnavailableCountdownAndBackendLoss(t *testing.T) {
 		t.Fatalf("native data view lost or mislabeled the estimated capacity: voltage=%q capacity=%q",
 			ui.values["input_voltage"].Text, ui.values["battery_capacity"].Text)
 	}
+	if ui.flow.state.Text != "On battery" {
+		t.Fatal("fresh on-battery snapshot did not update the power-flow animation:", ui.flow.state.Text)
+	}
 	s.Telemetry.Measurements["battery_capacity"] = ups.Measurement{
 		Unit: "%", Quality: "invalid", Reason: "Invalid reported capacity",
 	}
@@ -169,7 +185,38 @@ func TestNativeViewShowsFreshUnavailableCountdownAndBackendLoss(t *testing.T) {
 	if !ui.shutdown.Disabled() || !ui.cancelBtn.Disabled() || ui.values["input_voltage"].Text != "Unavailable - backend connection lost" {
 		t.Fatal("backend loss left actionable controls or healthy data")
 	}
+	if ui.flow.state.Text != "Power flow unknown" {
+		t.Fatal("backend loss left the power-flow animation in a verified state:", ui.flow.state.Text)
+	}
 	if api.calls != 0 {
 		t.Fatal("view rendering invoked backend control")
+	}
+}
+
+func TestPowerFlowAnimationFollowsVerifiedModeAndLabelsUnknownPaths(t *testing.T) {
+	flow := newPowerFlow()
+
+	flow.SetState("online", true)
+	if flow.state.Text != "Mains online" || flow.details.Text != "Charge / bypass: not reported" {
+		t.Fatalf("online flow made unsupported claims: state=%q details=%q", flow.state.Text, flow.details.Text)
+	}
+	flow.Advance()
+	if flow.phase == 0 {
+		t.Fatal("verified mains flow did not animate")
+	}
+
+	flow.SetState("on_battery", true)
+	if flow.state.Text != "On battery" || flow.details.Text != "Inverter / bypass: not reported" {
+		t.Fatalf("battery flow made unsupported claims: state=%q details=%q", flow.state.Text, flow.details.Text)
+	}
+
+	flow.SetState("unknown", false)
+	if flow.state.Text != "Power flow unknown" || flow.details.Text != "Charge / bypass / inverter: not reported" {
+		t.Fatalf("unknown flow was not clearly labeled: state=%q details=%q", flow.state.Text, flow.details.Text)
+	}
+	phase := flow.phase
+	flow.Advance()
+	if flow.phase != phase {
+		t.Fatal("unknown flow should not animate")
 	}
 }

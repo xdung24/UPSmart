@@ -29,8 +29,8 @@ Go was confirmed by the user on 2026-11-12. The first console milestone reads re
 | F-014 | Daemon-to-desktop IPC contracts and limits | P0 | Named-pipe IPC retained; TCP/web APIs removed (2026-11-16) | [Backend/IPC](F-014-backend-api.md) |
 | F-015 | Acceptance tests, hardware safety gates and evidence requirements | P0 | Full tests/vet/build pass; race tool still blocked | [Quality](F-015-quality.md) |
 | F-016 | PC hardware monitoring: CPU/GPU usage, GPU memory and disk metrics | P2 | Collector/API candidate; PC temperatures removed by request | [Hardware monitoring](F-016-pc-hardware-monitoring.md) |
-| F-017 | Telegram alerts, authorized status/checking commands and optional summaries | P1 | Direct/rdpwatcher relay mock-tested; checking commands direct-only; live delivery pending | [Telegram](F-017-telegram-notifications.md) |
-| F-018 | Fyne desktop: daemon named pipe or direct USB | P1 | Data View bottom text removed; footer removed; legacy-daemon estimate fallback tested | [Desktop](F-018-native-desktop.md) |
+| F-017 | Telegram alerts, authorized status/checking commands and optional summaries | P1 | Local relay power/connection alerts configured 2026-11-17; offline checks passed; restart/live receipt pending | [Telegram](F-017-telegram-notifications.md) |
+| F-018 | Fyne desktop: daemon named pipe or direct USB | P1 | Animated schematic spans two rows; narrower side readings and animation state tested | [Desktop](F-018-native-desktop.md) |
 
 P0 = monitoring foundation and safety; P1 = background operation and automation; P2 = optional hardware monitoring/control.
 

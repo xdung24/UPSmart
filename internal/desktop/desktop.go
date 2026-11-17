@@ -45,7 +45,7 @@ type UI struct {
 	cancelBtn  *widget.Button
 	values     map[string]*widget.Label
 	lights     map[string]*canvas.Circle
-	flow       *widget.Label
+	flow       *powerFlow
 	last       control.Snapshot
 }
 
@@ -61,8 +61,7 @@ func New(app fyne.App, api API) *UI {
 	u.policyNote = widget.NewLabel("Shutdown settings are saved by the active monitor and applied immediately.")
 	u.policyNote.Wrapping = fyne.TextWrapWord
 	u.elapsed = widget.NewLabel("Observed outage: unavailable | Countdown: unavailable")
-	u.flow = widget.NewLabelWithStyle("AC input  -->  UPS  -->  Output\nBattery state unavailable", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	u.flow.Wrapping = fyne.TextWrapWord
+	u.flow = newPowerFlow()
 	input := u.reading("input_voltage", "Input voltage")
 	output := u.reading("output_voltage", "Output voltage")
 	frequency := u.reading("input_frequency", "Input frequency")
@@ -82,8 +81,10 @@ func New(app fyne.App, api API) *UI {
 	u.shutdown.Disable()
 	u.cancelBtn.Disable()
 	data := container.NewVBox(
-		container.NewGridWithColumns(3, input, container.NewCenter(u.flow), output),
-		container.NewGridWithColumns(2, frequency, load),
+		container.NewGridWithColumns(3,
+			container.NewVBox(input, frequency),
+			container.NewMax(u.flow),
+			container.NewVBox(output, load)),
 		container.NewGridWithColumns(3, battery, temperature, capacity),
 		widget.NewSeparator(), lights)
 	u.events = widget.NewRichText(&widget.TextSegment{
@@ -188,6 +189,22 @@ func (u *UI) Quit() {
 
 func (u *UI) Start() {
 	go func() {
+		timer := time.NewTicker(180 * time.Millisecond)
+		defer timer.Stop()
+		for {
+			select {
+			case <-u.ctx.Done():
+				return
+			case <-timer.C:
+				fyne.Do(func() {
+					if !u.closed.Load() {
+						u.flow.Advance()
+					}
+				})
+			}
+		}
+	}()
+	go func() {
 		for u.ctx.Err() == nil {
 			var snapshot control.Snapshot
 			err := u.api.Request(u.ctx, http.MethodGet, "/snapshot", nil, &snapshot)
@@ -217,7 +234,7 @@ func (u *UI) Apply(snapshot control.Snapshot, err error) {
 	if err != nil {
 		u.policy.SetText("Policy status unknown. A backend countdown may still be active.")
 		u.elapsed.SetText("Observed outage: unavailable | Countdown: unknown")
-		u.flow.SetText("AC input  --?--  UPS  --?--  Output\nNo verified power flow")
+		u.flow.SetState("unknown", false)
 		for _, label := range u.values {
 			label.SetText("Unavailable - backend connection lost")
 		}
@@ -263,13 +280,7 @@ func (u *UI) Apply(snapshot control.Snapshot, err error) {
 	u.light("normal", fresh && s.Power.Fault != nil, s.Power.Fault != nil && !*s.Power.Fault)
 	u.light("mains", fresh && s.Power.Mode != "unknown", s.Power.Mode == "online")
 	u.light("battery", fresh && s.Power.LowBattery != nil, s.Power.LowBattery != nil && *s.Power.LowBattery)
-	if fresh && s.Power.Mode == "on_battery" {
-		u.flow.SetText("AC input unavailable\nBattery  -->  UPS  -->  Output")
-	} else if fresh && s.Power.Mode == "online" {
-		u.flow.SetText("AC input  -->  UPS  -->  Output\nInternal bypass/inverter path unverified")
-	} else {
-		u.flow.SetText("AC input  --?--  UPS  --?--  Output\nNo verified power flow")
-	}
+	u.flow.SetState(s.Power.Mode, fresh)
 	outage, remaining := "unavailable", "none"
 	if fresh && s.Power.Mode == "online" {
 		outage = "none"

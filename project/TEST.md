@@ -2,7 +2,13 @@
 
 Last updated: 2026-11-17
 
+Telegram power/connection alerts: local relay selection configured on 2026-11-17; state/notification/config tests and both local YAML offline validations passed. Restart and live delivery remain pending, not a confirmed bug. Details: [F-017](F-017-telegram-notifications.md#selected-power-and-connection-alerts---2026-11-17).
+
 Desktop navigation and layout: Data View / Setting / Shutdown / event-only Log tabs; screenshot header, PC hardware diagnostics, bottom footer and Data View bottom text removed. On 2026-11-17, `go test .\internal\desktop` passed; its headless test verified the tabs are the full content area, the footer is absent, Data View has no bottom text row, and the window height is 480. Full tests were not rerun after this UI change. Live daemon reload, native visual and live hardware checks remain pending. Details: [F-018](F-018-native-desktop.md).
+
+Power-flow drawing: on 2026-11-17, `go test .\internal\desktop` and `go vet .\internal\desktop` passed; tests cover fresh online/on-battery animation state and unknown/stale labeling. Q1 exposes only mains/on-battery mode, so charging and bypass/inverter topology are labeled not reported; actual native visual appearance and live UPS transitions remain pending. Details: [F-018](F-018-native-desktop.md).
+
+Data View layout: on 2026-11-17, `go test .\internal\desktop` passed with a headless check that the flow schematic occupies the center column spanning the input/frequency and output/load stacks. Native visual confirmation remains pending. Details: [F-018](F-018-native-desktop.md).
 
 Battery capacity estimate: user-provided 24.0-27.0 V AR2000 pack endpoints are implemented as a labeled, clamped linear estimate; policy continues to use only verified UPS flags. A read-only snapshot showed the connected, fresh daemon returned 27.0 V but omitted capacity; the desktop now estimates client-side for this older-daemon payload. With the current 27.0 V endpoint, regression tests verify 100.0% estimated; an earlier 27.1 V endpoint yielded 96.8%. Full `go test .\...` passed on 2026-11-17; live reconnection and battery calibration remain pending. No daemon was restarted. Details: [F-002](F-002-telemetry.md), [F-018](F-018-native-desktop.md) and [F-009](F-009-pc-shutdown.md).
 
