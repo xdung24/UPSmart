@@ -156,7 +156,7 @@ func TestNativeViewShowsFreshUnavailableCountdownAndBackendLoss(t *testing.T) {
 		t.Fatalf("native data view lost or mislabeled the estimated capacity: voltage=%q capacity=%q",
 			ui.values["input_voltage"].Text, ui.values["battery_capacity"].Text)
 	}
-	if ui.flow.state.Text != "On battery" {
+	if ui.flow.state.Text != "Mains lost: battery to output" {
 		t.Fatal("fresh on-battery snapshot did not update the power-flow animation:", ui.flow.state.Text)
 	}
 	s.Telemetry.Measurements["battery_capacity"] = ups.Measurement{
@@ -197,7 +197,8 @@ func TestPowerFlowAnimationFollowsVerifiedModeAndLabelsUnknownPaths(t *testing.T
 	flow := newPowerFlow()
 
 	flow.SetState("online", true)
-	if flow.state.Text != "Mains online" || flow.details.Text != "Charge / bypass: not reported" {
+	if flow.state.Text != "Mains online: AC to output" ||
+		flow.details.Text != "Battery connected; charging status not reported" {
 		t.Fatalf("online flow made unsupported claims: state=%q details=%q", flow.state.Text, flow.details.Text)
 	}
 	flow.Advance()
@@ -206,12 +207,13 @@ func TestPowerFlowAnimationFollowsVerifiedModeAndLabelsUnknownPaths(t *testing.T
 	}
 
 	flow.SetState("on_battery", true)
-	if flow.state.Text != "On battery" || flow.details.Text != "Inverter / bypass: not reported" {
+	if flow.state.Text != "Mains lost: battery to output" ||
+		flow.details.Text != "UPS inverter powering the output" {
 		t.Fatalf("battery flow made unsupported claims: state=%q details=%q", flow.state.Text, flow.details.Text)
 	}
 
 	flow.SetState("unknown", false)
-	if flow.state.Text != "Power flow unknown" || flow.details.Text != "Charge / bypass / inverter: not reported" {
+	if flow.state.Text != "Power flow unknown" || flow.details.Text != "Power source not verified" {
 		t.Fatalf("unknown flow was not clearly labeled: state=%q details=%q", flow.state.Text, flow.details.Text)
 	}
 	phase := flow.phase

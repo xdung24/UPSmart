@@ -53,6 +53,11 @@ type ShutdownRequest struct {
 	Countdown string `json:"countdown"`
 }
 
+type TelegramTestResult struct {
+	Accepted bool   `json:"accepted"`
+	Message  string `json:"message"`
+}
+
 func revision(value policy.Status) string {
 	text := fmt.Sprintf("%t|%t|%t|%t|%s|%t|%s|%s", value.Enabled, value.AutomaticEnabled,
 		value.ManualEnabled, value.DryRun, value.OutageAfter, value.LowBatteryEnabled,
@@ -61,15 +66,20 @@ func revision(value policy.Status) string {
 }
 
 type Bridge struct {
-	store  *state.Store
-	policy *policy.Controller
-	save   func(policy.Options) error
-	mu     sync.Mutex
-	slots  chan struct{}
+	store        *state.Store
+	policy       *policy.Controller
+	save         func(policy.Options) error
+	testTelegram func(context.Context) error
+	mu           sync.Mutex
+	slots        chan struct{}
 }
 
-func NewBridge(store *state.Store, controller *policy.Controller, save func(policy.Options) error) *Bridge {
-	return &Bridge{store: store, policy: controller, save: save, slots: make(chan struct{}, 8)}
+func NewBridge(store *state.Store, controller *policy.Controller, save func(policy.Options) error, testTelegram ...func(context.Context) error) *Bridge {
+	b := &Bridge{store: store, policy: controller, save: save, slots: make(chan struct{}, 8)}
+	if len(testTelegram) > 0 {
+		b.testTelegram = testTelegram[0]
+	}
+	return b
 }
 
 func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +95,27 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	if r.Method == http.MethodPost && r.URL.Path == "/telegram/test" {
+		if r.ContentLength != 0 {
+			http.Error(w, "Telegram test request must have an empty body", http.StatusBadRequest)
+			return
+		}
+		if b.testTelegram == nil {
+			http.Error(w, "Telegram notifications are not configured on the active monitor", http.StatusServiceUnavailable)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+		defer cancel()
+		if err := b.testTelegram(ctx); err != nil {
+			http.Error(w, "Telegram test failed: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, TelegramTestResult{
+			Accepted: true,
+			Message:  "The Telegram API or configured relay accepted the test notification. This does not prove that a person read it.",
+		})
+		return
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if r.Context().Err() != nil {
@@ -168,6 +199,10 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsupported desktop IPC operation", http.StatusNotFound)
 		return
 	}
+	writeJSON(w, value)
+}
+
+func writeJSON(w http.ResponseWriter, value any) {
 	data, err := json.Marshal(value)
 	if err != nil {
 		http.Error(w, "could not encode desktop state", http.StatusInternalServerError)
@@ -249,6 +284,9 @@ func (c *Client) Request(ctx context.Context, method, path string, body io.Reade
 	}
 	response, err := c.http.Do(request)
 	if err != nil {
+		if path == "/telegram/test" {
+			return errors.New("Telegram test interrupted; API acceptance is unknown; check delivery status before retrying")
+		}
 		if method == http.MethodPost || method == http.MethodPut {
 			return errors.New("desktop request interrupted; backend acceptance is unknown; reconnect and check policy state before retrying")
 		}

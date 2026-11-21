@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image/color"
 	"io"
@@ -30,23 +31,25 @@ type API interface {
 }
 
 type UI struct {
-	app        fyne.App
-	Window     fyne.Window
-	api        API
-	ctx        context.Context
-	cancel     context.CancelFunc
-	closed     atomic.Bool
-	policy     *widget.Label
-	policyNote *widget.Label
-	elapsed    *widget.Label
-	events     *widget.RichText
-	tabs       *container.AppTabs
-	shutdown   *widget.Button
-	cancelBtn  *widget.Button
-	values     map[string]*widget.Label
-	lights     map[string]*canvas.Circle
-	flow       *powerFlow
-	last       control.Snapshot
+	app            fyne.App
+	Window         fyne.Window
+	api            API
+	ctx            context.Context
+	cancel         context.CancelFunc
+	closed         atomic.Bool
+	policy         *widget.Label
+	policyNote     *widget.Label
+	elapsed        *widget.Label
+	events         *widget.RichText
+	tabs           *container.AppTabs
+	shutdown       *widget.Button
+	cancelBtn      *widget.Button
+	telegramTest   *widget.Button
+	telegramStatus *widget.Label
+	values         map[string]*widget.Label
+	lights         map[string]*canvas.Circle
+	flow           *powerFlow
+	last           control.Snapshot
 }
 
 func New(app fyne.App, api API) *UI {
@@ -78,6 +81,10 @@ func New(app fyne.App, api API) *UI {
 	u.shutdown = widget.NewButtonWithIcon("Shutdown Windows...", theme.MediaStopIcon(), u.confirmShutdown)
 	u.shutdown.Importance = widget.DangerImportance
 	u.cancelBtn = widget.NewButton("Cancel pending shutdown", func() { u.command("/cancel", nil) })
+	u.telegramStatus = widget.NewLabel("Telegram delivery: unknown")
+	u.telegramStatus.Wrapping = fyne.TextWrapWord
+	u.telegramTest = widget.NewButtonWithIcon("Test Telegram notification", theme.MailSendIcon(), u.testTelegram)
+	u.telegramTest.Disable()
 	u.shutdown.Disable()
 	u.cancelBtn.Disable()
 	data := container.NewVBox(
@@ -95,6 +102,12 @@ func New(app fyne.App, api API) *UI {
 	settings := container.NewVBox(
 		widget.NewCard("General settings", "Not editable in this desktop",
 			widget.NewLabel("USB, hardware, Telegram and account settings remain in the active monitor's configuration. Shutdown policy is managed on the Shutdown tab.")),
+		widget.NewCard("Telegram notifications", "Verify the active monitor's configured destination",
+			container.NewVBox(
+				u.telegramStatus,
+				u.telegramTest,
+				widget.NewLabel("Sends one test notification through the active monitor. API or relay acceptance is not proof of receipt or a read."),
+			)),
 	)
 	shutdown := container.NewVBox(
 		widget.NewCard("Shutdown policy", "Configured and applied by the active monitor",
@@ -243,6 +256,8 @@ func (u *UI) Apply(snapshot control.Snapshot, err error) {
 		}
 		u.shutdown.Disable()
 		u.cancelBtn.Disable()
+		u.telegramTest.Disable()
+		u.telegramStatus.SetText("Telegram delivery: unavailable - backend connection lost")
 		u.setEventLog("Backend unavailable; event history cannot be refreshed.")
 		return
 	}
@@ -304,6 +319,17 @@ func (u *UI) Apply(snapshot control.Snapshot, err error) {
 		text += " | " + *s.Policy.Outcome
 	}
 	u.policy.SetText(text)
+	telegram := s.Health.Telegram
+	telegramText := "Telegram delivery: " + telegram.Mode
+	if telegram.Error != "" {
+		telegramText += " - " + telegram.Error
+	}
+	u.telegramStatus.SetText(telegramText)
+	if telegram.Mode == "enabled" || telegram.Mode == "degraded" {
+		u.telegramTest.Enable()
+	} else {
+		u.telegramTest.Disable()
+	}
 	terminal := s.Policy.State == "requested" || s.Policy.State == "failed" || s.Policy.State == "dry_run"
 	u.shutdown.Disable()
 	u.cancelBtn.Disable()
@@ -390,6 +416,34 @@ func (u *UI) confirmShutdown() {
 			u.command("/shutdown", &p)
 		}
 	}, u.Window)
+}
+
+func (u *UI) testTelegram() {
+	u.telegramTest.Disable()
+	u.telegramStatus.SetText("Telegram delivery: testing...")
+	go func() {
+		var result control.TelegramTestResult
+		err := u.api.Request(u.ctx, http.MethodPost, "/telegram/test", nil, &result)
+		if err == nil && !result.Accepted {
+			err = errors.New("active monitor did not confirm Telegram acceptance")
+		}
+		if u.ctx.Err() != nil {
+			return
+		}
+		fyne.Do(func() {
+			if u.closed.Load() {
+				return
+			}
+			u.telegramTest.Enable()
+			if err != nil {
+				u.telegramStatus.SetText("Telegram test failed - " + err.Error())
+				dialog.ShowError(err, u.Window)
+				return
+			}
+			u.telegramStatus.SetText("Telegram test accepted")
+			dialog.ShowInformation("Telegram test", result.Message, u.Window)
+		})
+	}()
 }
 
 func (u *UI) settings() {

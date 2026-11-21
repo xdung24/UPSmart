@@ -24,6 +24,7 @@ var (
 	interfaceList     = cfgmgr.NewProc("CM_Get_Device_Interface_ListW")
 	createMutex       = kernel.NewProc("CreateMutexW")
 	queryProcessName  = kernel.NewProc("QueryFullProcessImageNameW")
+	getPowerStatus    = kernel.NewProc("GetSystemPowerStatus")
 )
 
 type attributes struct {
@@ -36,6 +37,15 @@ type attributes struct {
 type candidate struct {
 	device Device
 	path   string
+}
+
+type systemPowerStatus struct {
+	ACLineStatus       byte
+	BatteryFlag        byte
+	BatteryLifePercent byte
+	SystemStatusFlag   byte
+	BatteryLifeTime    uint32
+	BatteryFullTime    uint32
 }
 
 func AcquireOwner() (func(), error) {
@@ -146,6 +156,22 @@ func openDevice(path string) (syscall.Handle, error) {
 	return syscall.CreateFile(p, 0, syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE, nil, syscall.OPEN_EXISTING, 0, 0)
 }
 
+func openSessionDevice(path string) (syscall.Handle, error) {
+	p, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return syscall.InvalidHandle, err
+	}
+	access := uint32(syscall.GENERIC_READ | syscall.GENERIC_WRITE)
+	share := uint32(0)
+	flags := uint32(syscall.FILE_FLAG_OVERLAPPED)
+	handle, err := syscall.CreateFile(p, access, share, nil, syscall.OPEN_EXISTING, flags, 0)
+	if err == nil {
+		return handle, nil
+	}
+	return syscall.CreateFile(p, access, syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE, nil,
+		syscall.OPEN_EXISTING, flags, 0)
+}
+
 func deviceString(proc *syscall.LazyProc, handle syscall.Handle) (string, error) {
 	var buf [256]uint16
 	ok, _, err := proc.Call(uintptr(handle), uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Sizeof(buf)))
@@ -233,11 +259,105 @@ func inspect(path string) (candidate, error) {
 	}, path}, nil
 }
 
+func indexedString(handle syscall.Handle, index uintptr, length int) (string, error) {
+	response := make([]uint16, length)
+	bufferBytes := uint32(len(response) * 2)
+	ok, _, callErr := getIndexed.Call(uintptr(handle), index,
+		uintptr(unsafe.Pointer(&response[0])), uintptr(bufferBytes))
+	if ok == 0 {
+		return "", fmt.Errorf("read indexed HID string %d: %w", index, callErr)
+	}
+	return syscall.UTF16ToString(response), nil
+}
+
+type nativeSession struct {
+	handle      syscall.Handle
+	device      Device
+	phase       int
+	initialized bool
+}
+
+func openNativeSession() (*nativeSession, error) {
+	if err := CheckLegacy(); err != nil {
+		return nil, err
+	}
+	items, err := enumerate()
+	if err != nil {
+		return nil, err
+	}
+	if len(items) != 1 {
+		return nil, fmt.Errorf("expected exactly one UPS candidate; found %d", len(items))
+	}
+	if items[0].device.Product != "MEC0003" {
+		return nil, errors.New("unrecognized UPS product; refusing status query")
+	}
+	handle, err := openSessionDevice(items[0].path)
+	if err != nil {
+		return nil, fmt.Errorf("open selected UPS: %w", err)
+	}
+	return &nativeSession{handle: handle, device: items[0].device, initialized: true}, nil
+}
+
+func (s *nativeSession) Close() error {
+	if !s.initialized {
+		return nil
+	}
+	s.initialized = false
+	return syscall.CloseHandle(s.handle)
+}
+
+func (s *nativeSession) Status() (Result, error) {
+	result := Result{Devices: []Device{s.device}}
+	indexes := [...]uintptr{3, 3, 3, 0x0d, 0xf3, 0x0c}
+	phase := s.phase
+	s.phase = (s.phase + 1) % len(indexes)
+	statusText, err := indexedString(s.handle, indexes[phase], 50)
+	if err != nil {
+		return result, err
+	}
+	result.Devices[0].Capabilities = []string{"read_status_q1"}
+	if phase >= 3 {
+		result.RefreshOnly = true
+		return result, nil
+	}
+	result.Status = normalizeHIDQ1(statusText)
+	if _, err := ParseQ1(result.Status); err != nil {
+		return result, fmt.Errorf("unsupported UPS status response: %w", err)
+	}
+	var power systemPowerStatus
+	ok, _, _ := getPowerStatus.Call(uintptr(unsafe.Pointer(&power)))
+	if ok != 0 {
+		switch power.ACLineStatus {
+		case 0:
+			result.WindowsACLineState = "offline"
+		case 1:
+			result.WindowsACLineState = "online"
+		default:
+			result.WindowsACLineState = "unknown"
+		}
+	}
+	return result, nil
+}
+
+func normalizeHIDQ1(status string) string {
+	if strings.HasPrefix(status, "(") || len(status) < 2 {
+		return status
+	}
+	candidate := "(" + status[1:]
+	if _, err := ParseQ1(candidate); err == nil {
+		return candidate
+	}
+	return status
+}
+
 func NativeOperation(status bool) (Result, error) {
 	if status {
-		if err := CheckLegacy(); err != nil {
+		session, err := openNativeSession()
+		if err != nil {
 			return Result{}, err
 		}
+		defer session.Close()
+		return session.Status()
 	}
 	items, err := enumerate()
 	if err != nil {
@@ -247,30 +367,5 @@ func NativeOperation(status bool) (Result, error) {
 	for _, item := range items {
 		result.Devices = append(result.Devices, item.device)
 	}
-	if !status {
-		return result, nil
-	}
-	if len(items) != 1 {
-		return result, fmt.Errorf("expected exactly one UPS candidate; found %d", len(items))
-	}
-	if items[0].device.Product != "MEC0003" {
-		return result, errors.New("unrecognized UPS product; refusing status query")
-	}
-	handle, err := openDevice(items[0].path)
-	if err != nil {
-		return result, fmt.Errorf("open selected UPS: %w", err)
-	}
-	defer syscall.CloseHandle(handle)
-	var response [256]uint16
-	// MEC/Fabula status is USB string index 3. No other indexes are exposed.
-	ok, _, callErr := getIndexed.Call(uintptr(handle), 3, uintptr(unsafe.Pointer(&response[0])), uintptr(unsafe.Sizeof(response)))
-	if ok == 0 {
-		return result, fmt.Errorf("read fixed status index: %w", callErr)
-	}
-	result.Status = syscall.UTF16ToString(response[:])
-	if _, err := ParseQ1(result.Status); err != nil {
-		return result, fmt.Errorf("unsupported UPS status response: %w", err)
-	}
-	result.Devices[0].Capabilities = []string{"read_status_q1"}
 	return result, nil
 }

@@ -1,6 +1,28 @@
 # Errors and observations
 
-Last updated: 2026-11-17
+Last updated: 2026-11-22
+
+Telegram message icons: on 2026-11-22, direct and relay notification formatting
+was enhanced with event-specific icons and readable titles while retaining UTC
+time, safe detail, relay Markdown escaping and the existing 3,500-rune bound.
+Focused notification/control/desktop/monitor/state tests and `go vet .\...`
+passed. Live visual receipt remains pending. Details:
+[F-017](F-017-telegram-notifications.md#enhanced-telegram-message-format---2026-11-22).
+
+Power-flow chart simplification: on 2026-11-22, the desktop diagram's bypass
+path was removed. Fresh online state now shows AC → UPS → output and an honest
+charging-unreported battery note; fresh on-battery state shows battery → UPS →
+output; unknown/stale greys all paths and stops animation. `go test -count=1
+.\internal\desktop` and `go vet .\internal\desktop` passed. Native visual review
+remains pending. Details: [F-018](F-018-native-desktop.md).
+
+Mains-loss notification live observation: the stale online condition was not a Telegram failure. UPSmart's HID session keeps the device handle open with read/write, overlapped access and cycles Q1/Q1/Q1/F/BL/I; reopening a metadata-only handle left descriptor 3 stale. The replacement now uses a persistent helper and a one-way Windows offline fallback. Outage/restoration events and restoration Telegram delivery are live-verified; installed cold-start/reboot retest remains pending. Details: [E-011](E-011-mains-loss-not-detected.md).
+
+UPS status freshness observation: without legacy UPSmart, repeated index-3 reads can remain cached at online even after an actual mains change. A documented MEC0003 Hunnox trace confirms the vendor cycles read-only descriptor indices Q1/Q1/Q1/F/BL/I; the omitted `BL` (`0xf3`) phase was added to the persistent monitor cycle on 2026-11-21. Focused tests and vet pass; live unplug/replug verification remains mandatory before closing [E-008](E-008-q1-startup-control-response.md).
+
+2026-11-22 clean final-binary verification: legacy UPSmart and the service were stopped; `upsdaemon-re-engineered.exe` started from a fresh journal at 05:30 with an online baseline. Unplug produced `on_battery` at 05:31:42 and Telegram receipt; reconnect produced `online` at 05:33:30 and Telegram receipt. No connection errors occurred. Pre-17:06 diagnostic events from 2026-11-21 are invalid acceptance evidence. Details: [E-008](E-008-q1-startup-control-response.md), [E-011](E-011-mains-loss-not-detected.md).
+
+Telegram desktop test: on 2026-11-21, focused notification/control/desktop/monitor tests and `go vet .\...` passed. The Setting action waits for Telegram API or configured relay acceptance through the existing serialized worker and explicitly does not claim chat receipt. No live message was sent. `go test .\...` remains blocked by an unrelated `internal/ups` capacity assertion at 25.55 V (expects 50.0%, while 24.0-27.0 V linear mapping yields 51.666667%). Details: [F-017](F-017-telegram-notifications.md#desktop-test-notification---2026-11-21), [F-018](F-018-native-desktop.md).
 
 Telegram power/connection alerts: local relay selection configured on 2026-11-17; state/notification/config tests and both local YAML offline validations passed. Restart and live delivery remain pending, not a confirmed bug. Details: [F-017](F-017-telegram-notifications.md#selected-power-and-connection-alerts---2026-11-17).
 
@@ -40,5 +62,6 @@ The prior pipe/web/USB selection and loopback API checks are historical evidence
 | E-008 | Q1 startup returns 0x05; one status read succeeds after vendor handover | Observation open / P1; independent startup unresolved | 2026-11-16 | [Q1 startup](E-008-q1-startup-control-response.md) |
 | E-009 | Installer rejects equivalent Windows-normalized protected ACL | Historical fix verified / P1; installer replaced by user choice | 2026-11-16 | [Service ACL comparison](E-009-service-acl-normalization.md) |
 | E-010 | Service running without desktop IPC settings; normal-user desktop cannot connect | Configuration/default-setup observation / P1; defaults fixed, live retest pending | 2026-11-16 | [Desktop/service configuration](E-010-service-desktop-ipc-configuration.md) |
+| E-011 | Reopened metadata-only HID handle left Q1 stale, suppressing Telegram transitions | Fixed and live-verified / P1; install/reboot follow-up pending | 2026-11-22 | [Mains-loss detection](E-011-mains-loss-not-detected.md) |
 
 The user's report of legacy UPSmart crashes is background context, not a reproduced defect in this replacement. Add flat `E-xxx-short-name.md` records only for actual observations, with unknown causes labeled explicitly.

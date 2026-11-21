@@ -45,6 +45,70 @@ func TestLiveEventSinkDoesNotReplayHistoryAndReportsInitiallyAssertedFlags(t *te
 	}
 }
 
+func TestMainsLossFallbackEmitsPowerChangedEvent(t *testing.T) {
+	var delivered []Event
+	s := NewWithEventSink(time.Second, true, nil, nil, nil, func(event Event) {
+		delivered = append(delivered, event)
+	})
+	now := time.Now()
+	if err := s.Apply(now, sample("00001000"), nil); err != nil {
+		t.Fatal(err)
+	}
+	lost := sample("00001000")
+	lost.Status = "(000.0 000.0 230.0 010 50.0 27.0 30.0 00001000\r"
+	if err := s.Apply(now.Add(time.Second), lost, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range delivered {
+		if event.Type == "power_changed" && event.Message == "Power mode: on_battery" {
+			return
+		}
+	}
+	t.Fatal("mains loss fallback did not emit a live power_changed event")
+}
+
+func TestQ1PowerTransitionsAreNotOverriddenByWindowsACOnline(t *testing.T) {
+	var delivered []Event
+	s := NewWithEventSink(time.Second, true, nil, nil, nil, func(event Event) {
+		delivered = append(delivered, event)
+	})
+	now := time.Now()
+	online := sample("00001000")
+	online.WindowsACLineState = "online"
+	if err := s.Apply(now, online, nil); err != nil {
+		t.Fatal(err)
+	}
+	offline := online
+	offline.WindowsACLineState = "offline"
+	offline.Status = "(000.0 000.0 230.0 010 50.0 27.0 30.0 10001000\r"
+	if err := s.Apply(now.Add(time.Second), offline, nil); err != nil {
+		t.Fatal(err)
+	}
+	offlineFound := false
+	for _, event := range delivered {
+		if event.Type == "power_changed" && event.Message == "Power mode: on_battery" {
+			offlineFound = true
+			break
+		}
+	}
+	if !offlineFound {
+		t.Fatal("Windows AC-line fallback did not emit a live power_changed event")
+	}
+	eventsToLoss := len(delivered)
+	restored := offline
+	restored.WindowsACLineState = "online"
+	restored.Status = "(230.0 000.0 230.0 010 50.0 27.0 30.0 00001000\r"
+	if err := s.Apply(now.Add(2*time.Second), restored, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range delivered[eventsToLoss:] {
+		if event.Type == "power_changed" && event.Message == "Power mode: online" {
+			return
+		}
+	}
+	t.Fatal("Windows AC-line fallback did not emit a restoration power_changed event")
+}
+
 func TestHardwareCacheFreshnessAndIsolation(t *testing.T) {
 	s := New(time.Second, true)
 	s.EnableHardware(15 * time.Second)

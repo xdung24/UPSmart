@@ -86,7 +86,10 @@ func ParseQ1(raw string) (Reading, error) {
 	}
 	result.Measurements["battery_capacity"] = EstimateBatteryCapacity(values[5])
 	result.Mode = "online"
-	if bits[0] == '1' {
+	// Some AR2000 firmware revisions report 0 V input while leaving the Q1
+	// utility-fail bit clear. A positive output confirms the UPS remains powered.
+	voltageInputLost := values[0] <= 0.1 && values[2] > 0.1
+	if bits[0] == '1' || voltageInputLost {
 		result.Mode = "on_battery"
 	}
 	result.LowBattery = bits[1] == '1'

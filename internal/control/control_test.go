@@ -143,6 +143,34 @@ func TestLocalControlRejectsMalformedRequestsAndWrongHost(t *testing.T) {
 	}
 }
 
+func TestTelegramTestRequiresConfigurationAndReportsAcceptance(t *testing.T) {
+	store := state.New(time.Second, false)
+	controller, err := policy.New(policy.Options{}, store.PolicyInput, nil, store.UpdatePolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		tester func(context.Context) error
+		body   string
+		code   int
+	}{
+		{"disabled", nil, "", 503},
+		{"body rejected", func(context.Context) error { return nil }, "x", 400},
+		{"delivery rejected", func(context.Context) error { return errors.New("relay unavailable") }, "", 502},
+		{"accepted", func(context.Context) error { return nil }, "", 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bridge := NewBridge(store, controller, nil, tc.tester)
+			w := httptest.NewRecorder()
+			bridge.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "http://upsmart.local/telegram/test", strings.NewReader(tc.body)))
+			if w.Code != tc.code {
+				t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 type failingTransport struct{}
 
 func (failingTransport) RoundTrip(*http.Request) (*http.Response, error) {

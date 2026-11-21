@@ -26,7 +26,6 @@ type powerFlow struct {
 	mainIn     *canvas.Line
 	mainOut    *canvas.Line
 	battery    *canvas.Line
-	bypass     []*canvas.Line
 	marker     *canvas.Circle
 	ups        *canvas.Rectangle
 	batteryBox *canvas.Rectangle
@@ -35,24 +34,18 @@ type powerFlow struct {
 
 func newPowerFlow() *powerFlow {
 	d := &powerFlow{
-		mode:    "unknown",
-		state:   canvas.NewText("Power flow unknown", theme.Color(theme.ColorNameForeground)),
-		details: canvas.NewText("Charge / bypass / inverter: not reported", theme.Color(theme.ColorNameForeground)),
-		mainIn:  canvas.NewLine(flowUnknownColor),
-		mainOut: canvas.NewLine(flowUnknownColor),
-		battery: canvas.NewLine(flowUnknownColor),
-		bypass: []*canvas.Line{
-			canvas.NewLine(flowUnknownColor),
-			canvas.NewLine(flowUnknownColor),
-			canvas.NewLine(flowUnknownColor),
-		},
+		mode:       "unknown",
+		state:      canvas.NewText("Power flow unknown", theme.Color(theme.ColorNameForeground)),
+		details:    canvas.NewText("Power source not verified", theme.Color(theme.ColorNameForeground)),
+		mainIn:     canvas.NewLine(flowUnknownColor),
+		mainOut:    canvas.NewLine(flowUnknownColor),
+		battery:    canvas.NewLine(flowUnknownColor),
 		marker:     canvas.NewCircle(flowUnknownColor),
 		ups:        canvas.NewRectangle(color.Transparent),
 		batteryBox: canvas.NewRectangle(color.Transparent),
 		labels: []*canvas.Text{
 			canvas.NewText("AC input", theme.Color(theme.ColorNameForeground)),
 			canvas.NewText("Output", theme.Color(theme.ColorNameForeground)),
-			canvas.NewText("Bypass", theme.Color(theme.ColorNameForeground)),
 			canvas.NewText("UPS", theme.Color(theme.ColorNameForeground)),
 			canvas.NewText("Battery", theme.Color(theme.ColorNameForeground)),
 		},
@@ -70,15 +63,15 @@ func (d *powerFlow) SetState(mode string, fresh bool) {
 	d.mode = mode
 	d.fresh = fresh
 	d.state.Text = "Power flow unknown"
-	d.details.Text = "Charge / bypass / inverter: not reported"
+	d.details.Text = "Power source not verified"
 	if fresh {
 		switch mode {
 		case "online":
-			d.state.Text = "Mains online"
-			d.details.Text = "Charge / bypass: not reported"
+			d.state.Text = "Mains online: AC to output"
+			d.details.Text = "Battery connected; charging status not reported"
 		case "on_battery":
-			d.state.Text = "On battery"
-			d.details.Text = "Inverter / bypass: not reported"
+			d.state.Text = "Mains lost: battery to output"
+			d.details.Text = "UPS inverter powering the output"
 		}
 	}
 	d.Refresh()
@@ -109,9 +102,8 @@ func (d *powerFlow) pointOnPath(points []fyne.Position, progress float64) fyne.P
 func (d *powerFlow) CreateRenderer() fyne.WidgetRenderer {
 	objects := []fyne.CanvasObject{
 		d.mainIn, d.mainOut, d.battery,
-		d.bypass[0], d.bypass[1], d.bypass[2],
 		d.ups, d.batteryBox,
-		d.labels[0], d.labels[1], d.labels[2], d.labels[3], d.labels[4],
+		d.labels[0], d.labels[1], d.labels[2], d.labels[3],
 		d.state, d.details, d.marker,
 	}
 	return &powerFlowRenderer{diagram: d, objects: objects}
@@ -129,23 +121,19 @@ func (r *powerFlowRenderer) Layout(size fyne.Size) {
 	setLine := func(line *canvas.Line, x1, y1, x2, y2 float32) {
 		line.Position1, line.Position2 = point(x1, y1), point(x2, y2)
 	}
-	setLine(d.mainIn, 8, 55, 120, 55)
-	setLine(d.mainOut, 120, 55, 232, 55)
-	setLine(d.battery, 120, 77, 120, 100)
-	setLine(d.bypass[0], 45, 55, 45, 20)
-	setLine(d.bypass[1], 45, 20, 195, 20)
-	setLine(d.bypass[2], 195, 20, 195, 55)
-	d.ups.Move(point(65, 34))
-	d.ups.Resize(fyne.NewSize(110*sx, 43*sy))
-	d.batteryBox.Move(point(105, 100))
-	d.batteryBox.Resize(fyne.NewSize(30*sx, 17*sy))
+	setLine(d.mainIn, 8, 58, 82, 58)
+	setLine(d.mainOut, 158, 58, 232, 58)
+	setLine(d.battery, 120, 82, 120, 110)
+	d.ups.Move(point(82, 35))
+	d.ups.Resize(fyne.NewSize(76*sx, 46*sy))
+	d.batteryBox.Move(point(96, 110))
+	d.batteryBox.Resize(fyne.NewSize(48*sx, 20*sy))
 	positions := []fyne.Position{
-		point(4, 38), point(197, 38), point(101, 2), point(104, 49), point(91, 120),
+		point(2, 39), point(194, 39), point(82, 73), point(88, 132),
 	}
 	labelSizes := []fyne.Size{
-		fyne.NewSize(45*sx, 14*sy), fyne.NewSize(43*sx, 14*sy),
-		fyne.NewSize(60*sx, 14*sy), fyne.NewSize(110*sx, 14*sy),
-		fyne.NewSize(60*sx, 14*sy),
+		fyne.NewSize(55*sx, 14*sy), fyne.NewSize(45*sx, 14*sy),
+		fyne.NewSize(76*sx, 14*sy), fyne.NewSize(64*sx, 14*sy),
 	}
 	for i, label := range d.labels {
 		label.Move(positions[i])
@@ -168,9 +156,9 @@ func (r *powerFlowRenderer) Layout(size fyne.Size) {
 
 func (d *powerFlow) positionMarker(size fyne.Size) {
 	sx, sy := size.Width/240, size.Height/166
-	points := []fyne.Position{fyne.NewPos(45, 55), fyne.NewPos(120, 55), fyne.NewPos(195, 55)}
+	points := []fyne.Position{fyne.NewPos(8, 58), fyne.NewPos(82, 58), fyne.NewPos(120, 58), fyne.NewPos(158, 58), fyne.NewPos(232, 58)}
 	if d.mode == "on_battery" {
-		points = []fyne.Position{fyne.NewPos(120, 100), fyne.NewPos(120, 55), fyne.NewPos(195, 55)}
+		points = []fyne.Position{fyne.NewPos(120, 110), fyne.NewPos(120, 58), fyne.NewPos(158, 58), fyne.NewPos(232, 58)}
 	}
 	p := d.pointOnPath(points, d.phase)
 	d.marker.Move(fyne.NewPos(p.X*sx, p.Y*sy))
@@ -183,9 +171,6 @@ func (r *powerFlowRenderer) refreshColors() {
 	d.details.Color = foreground
 	for _, label := range d.labels {
 		label.Color = foreground
-	}
-	for _, line := range d.bypass {
-		line.StrokeColor = flowUnknownColor
 	}
 	active := flowUnknownColor
 	batteryActive := false

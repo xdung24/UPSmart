@@ -50,6 +50,24 @@ func TestBatteryCapacityEstimateUsesPackVoltageEndpoints(t *testing.T) {
 	}
 }
 
+func TestParseQ1DetectsMainsLossWhenUtilityBitRemainsClear(t *testing.T) {
+	got, err := ParseQ1("(000.0 000.0 230.0 010 50.0 27.0 30.0 00001000\r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Mode != "on_battery" {
+		t.Fatalf("zero input with active output was reported as %q", got.Mode)
+	}
+
+	got, err = ParseQ1("(000.0 000.0 000.0 000 00.0 27.0 30.0 00001000\r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Mode != "online" {
+		t.Fatalf("zero input without active output fabricated battery operation: %q", got.Mode)
+	}
+}
+
 func assertEstimatedCapacity(t *testing.T, measurement Measurement, want float64) {
 	t.Helper()
 	if measurement.Value == nil || measurement.Quality != "estimated" || measurement.Reason == "" ||

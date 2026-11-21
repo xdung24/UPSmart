@@ -1,6 +1,6 @@
 # F-018 - Fyne Windows desktop
 
-Updated: 2026-11-17 | Priority: P1 | Status: Standard-user desktop access preserved; default service IPC setup tested; live reconnection pending
+Updated: 2026-11-22 | Priority: P1 | Status: Power-flow chart simplified; Telegram test action added; live visual confirmation pending
 
 ## Current scope - 2026-11-16
 
@@ -32,6 +32,12 @@ The user opens the desktop to see readings, power flow, connection/UPS/mains/bat
 - On 2026-11-17, the user requested removal of the text at the bottom of Data View. Backend health-warning text is no longer displayed in that tab.
 - On 2026-11-17, the user requested an animated power-flow drawing in the Data View center block. The animation follows fresh mains-online or on-battery status; charge, bypass and inverter topology remain explicitly unreported because Q1 exposes no such fields.
 - On 2026-11-17, the user requested that the center animation also use the second row's space, with input/frequency and output/load stacked in narrower side columns.
+- On 2026-11-21, the user requested a Telegram test button in Setting. The
+  desktop requests a single test through the active monitor and displays API or
+  relay acceptance without claiming message receipt or a read.
+- The 2026-11-21 live outage test exposed [E-011](E-011-mains-loss-not-detected.md):
+  Q1 remained mains-like after wall-input disconnection, so no power-change
+  event existed for Telegram. Native Windows AC-line state is now a fallback.
 
 ## Technical design and first delivery
 
@@ -70,8 +76,11 @@ Extract the existing lifecycle into `internal/monitor` for console, SCM and desk
 - DESK-06: successful policy save persists before activation; failed save leaves active policy unchanged; pending/terminal controls cannot be silently reset.
 - DESK-07: no TCP/web listener is present; Telegram power commands cannot schedule/cancel anything.
 - DESK-15: the Shutdown tab exposes existing policy status, manual confirm/cancel and policy editing; updates use protected IPC and hot-apply without rewriting the main daemon YAML or restarting it.
-- DESK-16: the center power-flow schematic animates only for fresh verified mains/on-battery status, stops at unknown/stale status, and does not claim unreported charge, bypass or inverter state.
+- DESK-16: the simplified center power-flow schematic animates only for fresh verified mains/on-battery status and stops at unknown/stale status. It shows AC → UPS → output or battery → UPS → output, with no bypass path. When mains is online, the battery branch is shown as connected but charging remains explicitly unreported because Q1 has no verified charging flag.
 - DESK-17: the center schematic spans the combined height of the input/frequency and output/load rows; the four readings remain in two side columns.
+- DESK-18: Setting shows Telegram health and can request one bounded test
+  notification through the active monitor; disabled, blocked and failed states
+  are explicit, and no test result is presented as chat receipt.
 
 ## Results and next steps
 
@@ -84,6 +93,20 @@ On 2026-11-17, added an animated center schematic: fresh online status animates 
 On 2026-11-17, combined the first two Data View rows into three columns: input/frequency and output/load stack at the sides while the schematic fills the center column. The schematic minimum height was increased to use that combined area. `go test .\internal\desktop` passed, including a layout-structure regression check; native visual comparison remains pending.
 
 The first IPC tests passed against an actual uniquely named Windows pipe with fake store/controller, no TCP listener and no hardware. Widget tests use Fyne's headless driver and check actual readings/units, unavailable capacity, backend-derived countdown, pending controls and connection-loss invalidation. On 2026-11-17, regression tests simulated an older daemon's reported 27.0 V with unavailable capacity and verified the current 27.0 V pack endpoint displays 100.0% estimated (an earlier 27.1 V endpoint displayed 96.8%); another test confirms the bottom of Data View has no text row, the footer is absent, and the window height is 480. `go test .\internal\desktop` passed after the latest UI adjustment. The full Go test suite passed before it and was not rerun. The native OpenGL/CGO executable build is a separate check, not implied by widget tests.
+
+On 2026-11-21, the Telegram card was added to Setting with delivery status, a
+test button and an explicit acceptance/read-receipt limitation. Focused desktop,
+control, monitor and notification tests plus `go vet .\...` passed. The full suite
+is currently blocked by the unrelated 25.55 V capacity assertion documented in
+[F-017](F-017-telegram-notifications.md); native GUI rendering and live Telegram
+receipt remain pending.
+
+On 2026-11-22, the bypass-style diagram was simplified to the requested
+AC-to-output and battery-to-output views. Online status highlights the direct
+mains route and shows the battery branch with the explicit note that charging is
+not reported; on-battery status highlights the battery route to output. The
+unknown/stale state stops animation and greys all paths. Focused desktop tests
+and vet pass; native screenshot comparison remains pending.
 
 ### Connection and deployment
 

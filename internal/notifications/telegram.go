@@ -126,8 +126,9 @@ type Status struct {
 }
 
 type pending struct {
-	text    string
-	expires time.Time
+	text       string
+	expires    time.Time
+	completion chan error
 }
 
 // Sender owns a bounded, memory-only queue. Submit never performs network I/O.
@@ -252,7 +253,7 @@ func (s *Sender) Submit(event events.Record) {
 	// make the queue retain large records or include an embedded credential.
 	message := truncate(event.Message, maxTextRunes)
 	message = s.redact(message)
-	text := "UPSmart\n" + event.Time.UTC().Format(time.RFC3339) + "\n" + event.Type + ": " + message
+	text := formatNotification(event.Type, message, event.Time)
 	item := pending{text: truncate(text, maxTextRunes), expires: expires}
 	select {
 	case s.queue <- item:
@@ -261,6 +262,42 @@ func (s *Sender) Submit(event events.Record) {
 		s.status.Mode = "degraded"
 		s.status.Error = "Notification queue is full; events were dropped"
 	}
+}
+
+func formatNotification(kind, message string, at time.Time) string {
+	icon, title := "🔔", "Notification"
+	switch kind {
+	case "startup":
+		icon, title = "🚀", "UPSmart started"
+	case "connected":
+		icon, title = "✅", "UPS connected"
+	case "connection_error":
+		icon, title = "⚠️", "UPS connection problem"
+	case "power_changed":
+		icon, title = "🔌", "Power status changed"
+		if strings.Contains(message, "on_battery") {
+			icon, title = "🔋", "Mains power lost - running on battery"
+		} else if strings.Contains(message, "online") {
+			icon, title = "⚡", "Mains power restored"
+		}
+	case "low_battery_changed":
+		icon, title = "🪫", "UPS low-battery status changed"
+	case "fault_changed":
+		icon, title = "🚨", "UPS fault status changed"
+	case "shutdown_pending":
+		icon, title = "⏳", "Windows shutdown pending"
+	case "shutdown_cancelled":
+		icon, title = "✅", "Windows shutdown cancelled"
+	case "shutdown_requesting", "shutdown_requested":
+		icon, title = "🛑", "Windows shutdown requested"
+	case "shutdown_dry_run":
+		icon, title = "🧪", "Shutdown dry-run"
+	case "shutdown_failed":
+		icon, title = "❌", "Windows shutdown failed"
+	case "shutdown_state_changed":
+		icon, title = "⚙️", "PC shutdown policy changed"
+	}
+	return icon + " " + title + "\n🕒 " + at.UTC().Format(time.RFC3339) + "\n" + message
 }
 
 func (s *Sender) redact(text string) string {
@@ -297,6 +334,41 @@ func (s *Sender) Status() Status {
 	return out
 }
 
+// Test enqueues an operator-requested message on the same serialized worker as
+// live events and waits for Telegram or the relay to accept it.
+func (s *Sender) Test(ctx context.Context) error {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return errors.New("Telegram sender is stopped")
+	}
+	if s.status.Mode == "blocked" {
+		err := errors.New(s.status.Error)
+		s.mu.Unlock()
+		return err
+	}
+	now := time.Now()
+	completion := make(chan error, 1)
+	item := pending{
+		text: "🧪 UPSmart test notification\n🕒 " + now.UTC().Format(time.RFC3339) +
+			"\nTest notification requested from desktop settings.",
+		expires: now.Add(min(s.expiry, 8*time.Second)), completion: completion,
+	}
+	select {
+	case s.queue <- item:
+		s.mu.Unlock()
+	default:
+		s.mu.Unlock()
+		return errors.New("Telegram test queue is full")
+	}
+	select {
+	case err := <-completion:
+		return err
+	case <-ctx.Done():
+		return errors.New("Telegram test request cancelled before completion")
+	}
+}
+
 // Run serializes all sends and retries. Cancellation discards remaining memory
 // events with a visible count; there is no durable outbox or shutdown drain.
 func (s *Sender) Run(ctx context.Context) {
@@ -312,8 +384,11 @@ func (s *Sender) Run(ctx context.Context) {
 		defer s.mu.Unlock()
 		s.closed = true
 		for len(s.queue) > 0 {
-			<-s.queue
+			item := <-s.queue
 			s.status.Dropped++
+			if item.completion != nil {
+				item.completion <- errors.New("Telegram sender stopped before test completion")
+			}
 		}
 		if s.status.Mode != "blocked" {
 			s.status.Mode = "stopped"
@@ -336,6 +411,7 @@ func (s *Sender) Run(ctx context.Context) {
 			s.mu.Lock()
 			s.status.Mode, s.status.Error = "blocked", "Notification relay client could not be initialized"
 			s.mu.Unlock()
+			s.failQueued(errors.New("Notification relay client could not be initialized"))
 			return
 		}
 		defer conn.Close()
@@ -366,11 +442,31 @@ func (s *Sender) Run(ctx context.Context) {
 				}
 			}
 			s.mu.Unlock()
+			if item.completion != nil {
+				if accepted {
+					item.completion <- nil
+				} else {
+					item.completion <- errors.New(reason)
+				}
+			}
 			if permanent {
+				s.failQueued(errors.New(reason))
 				return
 			}
 		}
 	}
+}
+
+func (s *Sender) failQueued(err error) {
+	s.mu.Lock()
+	for len(s.queue) > 0 {
+		item := <-s.queue
+		s.status.Dropped++
+		if item.completion != nil {
+			item.completion <- err
+		}
+	}
+	s.mu.Unlock()
 }
 
 func waitUntil(ctx context.Context, until time.Time) bool {

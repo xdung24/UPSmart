@@ -1,6 +1,6 @@
 # F-001 - USB communication
 
-Updated: 2026-11-16 | Priority: P0 | Status: Q1 live verified; independent-startup observation open
+Updated: 2026-11-22 | Priority: P0 | Status: Persistent MEC0003 HID session live-verified; install/reboot soak pending
 
 ## Current startup observation - 2026-11-16
 
@@ -37,6 +37,23 @@ The user stops UPSmart only when ready, runs a diagnostic connection check, sele
 ## Decisions and security boundaries
 
 The exact transport and query set are unresolved. Do not treat generic NUT VID/PID support as a verified protocol. Concurrent polling is unsupported until proven safe. Power control is separately specified in [F-010](F-010-ups-power-off.md).
+
+MEC0003 freshness requires more than repeatedly decoding cached index 3 data.
+Reverse engineering identified the required read-only vendor behavior without
+copying application code. UPSmart opens the HID handle with read/write access
+and overlapped I/O, keeps it open, and cycles indexed strings
+`0x03, 0x03, 0x03, 0x0d, 0xf3, 0x0c` (Q1/Q1/Q1/F/BL/I) through
+`HidD_GetIndexedString` with a 100-byte buffer. UPSmart's replacement now uses
+a bounded persistent helper process with those semantics. No feature report or
+power-changing command is sent.
+
+On 2026-11-22 with legacy UPSmart and the service closed, the final candidate
+started from a fresh online baseline, generated `on_battery` at 05:31:42 after
+input removal and `online` at 05:33:30 after restoration; the user confirmed
+both Telegram messages. Pre-17:06 intermediate-build observations are not
+acceptance evidence. Occasional first-character HID corruption is accepted only
+when the remainder is a fully valid Q1 frame; other malformed frames remain
+explicit errors.
 
 ## Results and next steps
 

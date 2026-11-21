@@ -1,6 +1,77 @@
 # F-017 - Telegram notifications
 
-Updated: 2026-11-17 | Priority: P1 | Status: Local relay alerts configured; mock/offline checks passed; activation and live delivery pending
+Updated: 2026-11-22 | Priority: P1 | Status: Icon-enhanced notifications implemented; focused tests/vet passed; live message format retest pending
+
+## Enhanced Telegram message format - 2026-11-22
+
+Direct Telegram and rdpwatcher relay messages now share a compact visual format
+without changing event selection, queueing, retries or safety bounds:
+
+- `🔋 Mains power lost - running on battery`
+- `⚡ Mains power restored`
+- `✅ UPS connected`
+- `⚠️ UPS connection problem`
+- `🚨 UPS fault status changed`
+- `🪫 UPS low-battery status changed`
+- shutdown/policy messages use status-appropriate icons
+- the desktop test uses `🧪 UPSmart test notification`
+
+Each message includes a `🕒` UTC timestamp and the existing redacted event detail.
+Relay mode still applies legacy Markdown escaping after formatting, so icons are
+preserved while `_`, `*`, brackets and backticks remain safely escaped. Direct
+mode remains plain text. The 3,500-rune bound is unchanged.
+
+Checks on 2026-11-22:
+`go test -count=1 .\internal\notifications .\internal\control .\internal\desktop .\internal\monitor .\internal\state`
+and `go vet .\...` passed. The tests cover distinct power icons, generic fallback,
+relay escaping, explicit test formatting and the existing delivery bounds. No
+live Telegram message was sent in this change.
+
+## Desktop test notification - 2026-11-21
+
+The Setting tab now shows the active monitor's Telegram delivery status and a
+**Test Telegram notification** button. The button is enabled only while the
+backend reports an enabled or degraded sender; disabled, blocked and disconnected
+states remain visibly unavailable.
+
+The desktop sends one bounded `POST /telegram/test` request through its existing
+protected local IPC. The monitor enqueues the test on the same serialized
+Telegram/relay worker as live events, so it keeps the existing spacing, retry,
+expiry and cancellation limits. The response reports that Telegram's API or the
+configured relay accepted the notification; it does not claim chat receipt or a
+human read. A failed/unknown request is shown explicitly and not converted into
+successful-looking health.
+
+Implementation checks on 2026-11-21: focused
+`go test .\internal\notifications .\internal\control .\internal\desktop .\internal\monitor`
+and `go vet .\...` passed. Coverage verifies exact desktop test-message content,
+worker acceptance, local endpoint validation and disabled/failure/accepted
+responses. `go test .\...` reached an unrelated existing failure in
+`internal/ups`: the 25.55 V test expects 50.0% although the documented 24.0-27.0 V
+linear mapping produces 51.666667%. No real relay, Telegram message, active
+configuration change, monitor restart or live chat receipt was performed.
+
+## Mains-loss notification live observation - 2026-11-21
+
+The user received the manual test notification but received no alert after
+disconnecting the wall socket from the UPS input. The desktop remained
+`Mains online` with 228.0 V input and no `power_changed` log entry. This proved
+the selected relay/destination worked for the manual action, but the monitor
+never submitted an outage event for Telegram; it is tracked in
+[E-011](E-011-mains-loss-not-detected.md).
+
+To handle this UPS/driver behavior, Q1 remains authoritative. A frame with 0 V
+input and positive output is treated as battery operation when the utility-fail
+bit is not asserted. `GetSystemPowerStatus` is only a one-way fallback: Windows
+AC-online never overrides Q1 because Windows can remain online while receiving
+power from the UPS inverter; Windows AC-offline may only promote a stale Q1
+online result. Live capture confirmed Q1 itself changes from
+`10001000` at 0 V input to `00001000` at restored 227 V input.
+
+Automated state, notification, desktop, monitor and control tests passed, as did
+focused parser checks and `go vet .\...`. A live unplug test confirmed the outage
+path. A live plug-in test remains pending for the new symmetric restoration
+handling.
 
 ## Selected power and connection alerts - 2026-11-17
 

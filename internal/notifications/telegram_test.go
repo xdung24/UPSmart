@@ -178,7 +178,7 @@ func TestSuccessFilteringDeduplicationAndPlainText(t *testing.T) {
 	})
 	sender.selected = map[string]bool{"power_changed": true}
 	first := record(1, "power_changed")
-	first.Message = "<b>plain text</b> " + testToken + " " + testOptions().ChatID + " " + strings.Repeat("ế", 5000)
+	first.Message = "Power mode: on_battery <b>plain text</b> " + testToken + " " + testOptions().ChatID + " " + strings.Repeat("ế", 5000)
 	sender.Submit(first)
 	sender.Submit(first)
 	sender.Submit(record(2, "startup"))
@@ -208,10 +208,59 @@ func TestSuccessFilteringDeduplicationAndPlainText(t *testing.T) {
 	if !strings.Contains(messages[0], first.Time.Format(time.RFC3339)) || !strings.Contains(messages[0], "<b>plain text</b>") {
 		t.Error("timestamp or literal plain text missing")
 	}
+	if !strings.HasPrefix(messages[0], "🔋 Mains power lost - running on battery\n🕒 ") {
+		t.Errorf("power event did not use the outage icon/title: %q", messages[0])
+	}
 	status := sender.Status()
 	*status.LastSuccess = time.Time{}
 	if sender.Status().LastSuccess.IsZero() {
 		t.Error("caller mutated internal status timestamp")
+	}
+}
+
+func TestNotificationFormattingUsesDistinctEventIcons(t *testing.T) {
+	now := time.Date(2026, 11, 22, 1, 2, 3, 0, time.UTC)
+	for _, test := range []struct {
+		kind, message, prefix string
+	}{
+		{"power_changed", "Power mode: on_battery", "🔋 Mains power lost - running on battery\n"},
+		{"power_changed", "Power mode: online", "⚡ Mains power restored\n"},
+		{"connected", "Verified Q1 response received", "✅ UPS connected\n"},
+		{"connection_error", "HID helper failed", "⚠️ UPS connection problem\n"},
+		{"fault_changed", "UPS fault: true", "🚨 UPS fault status changed\n"},
+		{"unknown_event", "Example", "🔔 Notification\n"},
+	} {
+		text := formatNotification(test.kind, test.message, now)
+		if !strings.HasPrefix(text, test.prefix+"🕒 "+now.Format(time.RFC3339)+"\n") {
+			t.Errorf("%s formatted unexpectedly: %q", test.kind, text)
+		}
+	}
+}
+
+func TestExplicitTelegramTestWaitsForAcceptance(t *testing.T) {
+	messages := make(chan string, 1)
+	sender := testSender(t, func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		messages <- payload["text"].(string)
+		fmt.Fprint(w, `{"ok":true,"result":{"message_id":1}}`)
+	})
+	startSender(t, sender)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := sender.Test(ctx); err != nil {
+		t.Fatal(err)
+	}
+	message := <-messages
+	if !strings.HasPrefix(message, "🧪 UPSmart test notification\n🕒 ") ||
+		!strings.Contains(message, "Test notification requested from desktop settings") ||
+		strings.Contains(message, testToken) {
+		t.Fatalf("unexpected test notification: %q", message)
+	}
+	if sender.Status().LastSuccess == nil {
+		t.Fatal("accepted test did not update delivery health")
 	}
 }
 

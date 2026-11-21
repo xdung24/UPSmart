@@ -27,3 +27,23 @@ func TestSameNamedManagementCopyIsNotMistakenForLegacy(t *testing.T) {
 		t.Fatal("inaccessible image was silently assumed safe")
 	}
 }
+
+func TestNormalizeHIDQ1RepairsOnlyValidatedFirstCharacterCorruption(t *testing.T) {
+	valid := "(000.0 000.0 220.0 009 00.0 25.4 29.0 10001000\r"
+	for _, damaged := range []string{
+		"\x15000.0 000.0 220.0 009 00.0 25.4 29.0 10001000\r",
+		"*000.0 000.0 220.0 009 00.0 25.4 29.0 10001000\r",
+	} {
+		if got := normalizeHIDQ1(damaged); got != valid {
+			t.Fatalf("valid Q1 with damaged prefix not normalized: %q", got)
+		}
+	}
+	for _, invalid := range []string{
+		"\x15UPS No Ack",
+		"*230.0 000.0 230.0 invalid",
+	} {
+		if got := normalizeHIDQ1(invalid); got != invalid {
+			t.Fatalf("invalid HID response was rewritten: %q", got)
+		}
+	}
+}

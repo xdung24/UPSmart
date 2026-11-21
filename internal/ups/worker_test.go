@@ -33,7 +33,8 @@ func TestWorkerBoundsBlockedNativeWork(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	_, err = (Worker{exe}).Run(ctx, true)
+	worker := Worker{Executable: exe}
+	_, err = worker.Run(ctx, true)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected deadline, got %v", err)
 	}
@@ -52,7 +53,8 @@ func TestWorkerRejectsHelperErrorsAndOversizedOutput(t *testing.T) {
 			t.Setenv("UPSMART_TEST_HELPER", mode)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			if _, err := (Worker{exe}).Run(ctx, false); err == nil {
+			worker := Worker{Executable: exe}
+			if _, err := worker.Run(ctx, false); err == nil {
 				t.Fatal("expected explicit helper error")
 			}
 		})

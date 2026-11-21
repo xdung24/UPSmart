@@ -1,6 +1,6 @@
 # E-008 - Q1 startup returns control byte 0x05
 
-Updated: 2026-11-16 | Status: Open observation / P1; one post-vendor recovery read verified, independent startup unresolved
+Updated: 2026-11-22 | Status: Fixed and live-verified with final candidate / P1
 
 ## Features and impact
 
@@ -32,11 +32,31 @@ The user explicitly stopped the daemon and approved each hardware diagnostic pha
 
    The helper validated the frame and advertised `read_status_q1`. Decoded values: input 231 V AC, output 233 V AC, load 15%, frequency 50.2 Hz, battery 27.0 V DC and UPS temperature 29 C; online, no low-battery/fault flags. This is one successful sample, not sustained-polling or cold-start verification.
 
+   On 2026-11-21, repeated tests without the vendor process showed that repeated
+   index-3 reads can remain at the previous Q1 frame. A public MEC0003 Hunnox trace
+   documents the vendor's one-per-second indexed-string cycle as `Q1, Q1, Q1, F,
+   BL, I` (`0x03, 0x03, 0x03, 0x0d, 0xf3, 0x0c`). The earlier lock-step experiment
+   omitted the `BL` (`0xf3`) read, and subsequent polling still reopened the HID
+   handle between requests. Static reverse engineering confirmed that UPSmart
+   opens the device with read/write access and `FILE_FLAG_OVERLAPPED`, keeps the
+   handle open, and uses `HidD_GetIndexedString` with a 100-byte buffer. The
+   replacement now mirrors those read-only semantics in a persistent helper.
+
+   Diagnostic events before 17:06 are rejected as acceptance evidence. The final
+   candidate was tested from a fresh journal with legacy UPSmart and the service
+   stopped: initial online, unplug event at 05:31:42, restoration at 05:33:30 on
+   2026-11-22 local time, with both Telegram messages confirmed. A damaged
+   first character is accepted only when prepending `(` produces a fully valid
+   Q1 frame.
+
 ## Cause and disposition
 
 Confirmed: the parser rejected non-Q1 device data correctly. YAML parsing is not the source of the invalid USB response. Buffer reduction alone did not recover status. A valid status response was available after the vendor-software handover.
 
-Unknown: the meaning of this device's `0x05`, the exact initialization/communication sequence used by the vendor, whether the same behavior recurs after USB reconnect/reboot, and whether status continues refreshing independently. Missing startup initialization is a supported hypothesis, not a fully confirmed root cause. Do not label `0x05` as an ACK/NAK or map it to a UPS power state without evidence.
+The 2026-11-21 candidate no longer depends on vendor handover. The confirmed
+cause was the replacement's metadata-only, repeatedly reopened HID handle.
+USB reconnect/reboot and long-duration cold-start behavior remain unverified.
+Do not label `0x05` as an ACK/NAK or map it to a UPS power state.
 
 Temporary user-operated workaround: while this app is stopped, open vendor UPSmart and verify live readings, then **Exit/Quit it completely from the tray** before starting this daemon. Never run both pollers together. The workaround produced the single successful capture above; repeatability remains unverified. It is not an implemented automatic fix or a production-readiness claim.
 
@@ -52,4 +72,6 @@ Temporary user-operated workaround: while this app is stopped, open vendor UPSma
 
 The user approved only the bounded read-only diagnostic phases above and manually controlled vendor startup/exit. No unverified startup command or proprietary implementation was copied.
 
-Keep E-008 open. Next requires a separately approved read-only investigation of the missing initialization/refresh behavior, with a reproducible cold-start baseline and sustained fresh-status verification. Do not add a guessed handshake, disable the legacy-process guard or accept `0x05` as a sample.
+Close the original independent-refresh defect for the final candidate. Installed
+service deployment, reboot and extended USB-reconnect soak remain separate
+follow-up validation.

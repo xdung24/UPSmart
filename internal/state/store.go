@@ -156,6 +156,11 @@ func (s *Store) Apply(now time.Time, result ups.Result, readErr error) error {
 			readErr = fmt.Errorf("expected exactly one UPS; found %d", len(result.Devices))
 		} else {
 			reading, readErr = ups.ParseQ1(result.Status)
+			// Windows remains "online" while the PC is supplied by the UPS
+			// inverter, so it cannot override a verified Q1 battery state.
+			if readErr == nil && result.WindowsACLineState == "offline" && reading.Mode == "online" {
+				reading.Mode = "on_battery"
+			}
 		}
 	}
 	s.mu.Lock()

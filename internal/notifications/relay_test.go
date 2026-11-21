@@ -88,7 +88,8 @@ func TestRelaySendsSelectedLiveEventsWithoutBotCredentials(t *testing.T) {
 	startSender(t, sender)
 	awaitStatus(t, sender, func(s Status) bool { return s.LastSuccess != nil })
 	got := <-messages
-	want := "UPSmart\n" + first.Time.Format(time.RFC3339) + "\npower\\_changed: on\\_battery: \\[PC] \\*literal\\* \\`text\\` \\\\"
+	want := "🔋 Mains power lost - running on battery\n🕒 " + first.Time.Format(time.RFC3339) +
+		"\non\\_battery: \\[PC] \\*literal\\* \\`text\\` \\\\"
 	if got != want {
 		t.Fatalf("unexpected relay payload: %q, want %q", got, want)
 	}

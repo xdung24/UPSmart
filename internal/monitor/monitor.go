@@ -56,6 +56,7 @@ func run(parent context.Context, cfg config.Config, worker ups.Worker, ready fun
 		return err
 	}
 	defer release()
+	defer worker.Close()
 	if cfg.MonitoringEnabled {
 		if err := ups.CheckLegacy(); err != nil {
 			return err
@@ -138,6 +139,10 @@ func run(parent context.Context, cfg config.Config, worker ups.Worker, ready fun
 	}
 	var pipeServer *http.Server
 	if cfg.Desktop != nil {
+		var telegramTests []func(context.Context) error
+		if sender != nil {
+			telegramTests = append(telegramTests, sender.Test)
+		}
 		bridge := control.NewBridge(store, controller, func(options policy.Options) error {
 			next := cfg
 			next.PowerControl = &options
@@ -145,7 +150,7 @@ func run(parent context.Context, cfg config.Config, worker ups.Worker, ready fun
 				return err
 			}
 			return control.SavePolicy(cfg.Desktop.SettingsFile, options)
-		})
+		}, telegramTests...)
 		pipeServer = &http.Server{Handler: bridge, ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second,
 			IdleTimeout: 10 * time.Second, MaxHeaderBytes: 8192}
