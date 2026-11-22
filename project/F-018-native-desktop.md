@@ -1,6 +1,6 @@
 # F-018 - Fyne Windows desktop
 
-Updated: 2026-11-22 | Priority: P1 | Status: Power-flow chart simplified; Telegram test action added; live visual confirmation pending
+Updated: 2026-11-22 | Priority: P1 | Status: Car-battery icon applied; simplified flow and Telegram test added; live visual confirmation pending
 
 ## Current scope - 2026-11-16
 
@@ -38,6 +38,9 @@ The user opens the desktop to see readings, power flow, connection/UPS/mains/bat
 - The 2026-11-21 live outage test exposed [E-011](E-011-mains-loss-not-detected.md):
   Q1 remained mains-like after wall-input disconnection, so no power-change
   event existed for Telegram. Native Windows AC-line state is now a fallback.
+- On 2026-11-22, the user supplied `car-battery.ico` as the desktop icon. The
+  original ICO is embedded into the Windows executable; a PNG conversion is
+  bundled for the Fyne application, window and system-tray icon.
 
 ## Technical design and first delivery
 
@@ -107,6 +110,11 @@ mains route and shows the battery branch with the explicit note that charging is
 not reported; on-battery status highlights the battery route to output. The
 unknown/stale state stops animation and greys all paths. Focused desktop tests
 and vet pass; native screenshot comparison remains pending.
+
+The `car-battery.ico` resource is now used for the Windows executable, Fyne
+application, window and tray. A focused icon decode test, desktop tests and
+desktop vet passed. A Windows GUI build succeeded and the executable's
+associated icon was verified as 32×32; native visual review remains pending.
 
 ### Connection and deployment
 

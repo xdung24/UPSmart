@@ -57,7 +57,7 @@ func New(app fyne.App, api API) *UI {
 	u := &UI{app: app, api: api, ctx: ctx, cancel: cancel, values: make(map[string]*widget.Label),
 		lights: make(map[string]*canvas.Circle)}
 	u.Window = app.NewWindow("UPSmart Monitor")
-	u.Window.SetIcon(theme.ComputerIcon())
+	u.Window.SetIcon(AppIcon())
 	u.Window.Resize(fyne.NewSize(800, 480))
 	u.policy = widget.NewLabel("PC shutdown policy: unknown")
 	u.policy.Wrapping = fyne.TextWrapWord
@@ -130,7 +130,7 @@ func New(app fyne.App, api API) *UI {
 		container.NewTabItem("Log", u.events))
 	u.Window.SetContent(u.tabs)
 	if desktop, ok := app.(fynedesktop.App); ok {
-		desktop.SetSystemTrayIcon(theme.ComputerIcon())
+		desktop.SetSystemTrayIcon(AppIcon())
 		desktop.SetSystemTrayMenu(fyne.NewMenu("UPSmart Monitor",
 			fyne.NewMenuItem("Show UPSmart", u.Show),
 			fyne.NewMenuItem("Settings", func() { u.Show(); u.tabs.SelectIndex(1) }),

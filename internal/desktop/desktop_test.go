@@ -1,8 +1,10 @@
 package desktop
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"image"
 	"io"
 	"strings"
 	"sync/atomic"
@@ -20,6 +22,13 @@ import (
 	"upsmart/internal/state"
 	"upsmart/internal/ups"
 )
+
+func TestAppIconDecodes(t *testing.T) {
+	_, _, err := image.Decode(bytes.NewReader(AppIcon().Content()))
+	if err != nil {
+		t.Fatal("car-battery app icon cannot be decoded:", err)
+	}
+}
 
 type unusedAPI struct{ calls int }
 

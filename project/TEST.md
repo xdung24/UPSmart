@@ -16,6 +16,12 @@ output; unknown/stale greys all paths and stops animation. `go test -count=1
 .\internal\desktop` and `go vet .\internal\desktop` passed. Native visual review
 remains pending. Details: [F-018](F-018-native-desktop.md).
 
+Desktop icon: on 2026-11-22, `car-battery.ico` was embedded as the Windows
+executable resource and bundled as a PNG-backed Fyne app/window/tray resource.
+`go test -count=1 .\internal\desktop .\cmd\upsdesktop` and desktop vet passed;
+a Windows GUI build succeeded and `Icon.ExtractAssociatedIcon` returned a 32×32
+icon. Details: [F-018](F-018-native-desktop.md).
+
 Mains-loss notification live observation: the stale online condition was not a Telegram failure. UPSmart's HID session keeps the device handle open with read/write, overlapped access and cycles Q1/Q1/Q1/F/BL/I; reopening a metadata-only handle left descriptor 3 stale. The replacement now uses a persistent helper and a one-way Windows offline fallback. Outage/restoration events and restoration Telegram delivery are live-verified; installed cold-start/reboot retest remains pending. Details: [E-011](E-011-mains-loss-not-detected.md).
 
 UPS status freshness observation: without legacy UPSmart, repeated index-3 reads can remain cached at online even after an actual mains change. A documented MEC0003 Hunnox trace confirms the vendor cycles read-only descriptor indices Q1/Q1/Q1/F/BL/I; the omitted `BL` (`0xf3`) phase was added to the persistent monitor cycle on 2026-11-21. Focused tests and vet pass; live unplug/replug verification remains mandatory before closing [E-008](E-008-q1-startup-control-response.md).

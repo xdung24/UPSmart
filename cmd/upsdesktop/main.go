@@ -33,6 +33,7 @@ func main() {
 	configPath := flag.String("config", "", "YAML configuration for direct USB monitoring")
 	flag.Parse()
 	app := app.NewWithID("local.upsmart.monitor")
+	app.SetIcon(desktop.AppIcon())
 	if flag.NArg() != 0 {
 		showError(app.NewWindow("UPSmart Monitor - connection error"), app, fmt.Errorf("unexpected positional arguments"))
 		app.Run()
