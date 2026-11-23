@@ -1,6 +1,15 @@
 # Errors and observations
 
-Last updated: 2026-11-22
+Last updated: 2026-11-23
+
+Intermittent `0x05`: on 2026-11-23 a live Telegram connection alert contained
+one control byte instead of a Q1 frame. This is not a mains/power event. The
+persistent helper now treats `0x05` as transient refresh and retains the last
+verified Q1 without emitting a false connection alert; cold startup gets a
+bounded six-request refresh allowance. Details:
+[E-008](E-008-q1-startup-control-response.md#intermittent-0x05-message---2026-11-23).
+Focused UPS worker/parser, state, monitor and notification tests plus targeted
+vet passed on 2026-11-23.
 
 Telegram message icons: on 2026-11-22, direct and relay notification formatting
 was enhanced with event-specific icons and readable titles while retaining UTC

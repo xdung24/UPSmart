@@ -1,6 +1,6 @@
 # E-008 - Q1 startup returns control byte 0x05
 
-Updated: 2026-11-22 | Status: Fixed and live-verified with final candidate / P1
+Updated: 2026-11-23 | Status: Fixed refresh verified; intermittent 0x05 responses now treated as transient refresh / P1
 
 ## Features and impact
 
@@ -75,3 +75,21 @@ The user approved only the bounded read-only diagnostic phases above and manuall
 Close the original independent-refresh defect for the final candidate. Installed
 service deployment, reboot and extended USB-reconnect soak remain separate
 follow-up validation.
+
+## Intermittent 0x05 message - 2026-11-23
+
+At 08:01 UTC+7, Telegram reported:
+
+`unsupported UPS status response: invalid Q1 frame: expected '(' prefix; received 1 bytes, prefix "\x05"`
+
+This is an intermittent one-byte HID/UPS control response, not evidence that
+the UPS lost mains or shut down. It remains invalid telemetry and is never
+fabricated into a power state. The persistent helper now treats `0x05` like a
+refresh-only phase: when a previous valid Q1 sample exists, that verified sample
+is retained and no `connection_error`/Telegram alert is emitted for that poll.
+At startup without a previous valid sample, the worker advances bounded refresh
+requests until a valid Q1 frame appears or the six-request startup refresh
+budget is exhausted.
+
+Focused worker/parser tests and documentation validation are required after this
+change; a normal valid outage/restoration transition remains unchanged.

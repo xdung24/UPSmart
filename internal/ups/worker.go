@@ -104,6 +104,7 @@ func (w *Worker) Close() error {
 }
 
 func (w *Worker) sessionRun(ctx context.Context) (Result, error) {
+	startupRefreshes := 0
 	for {
 		if w.session == nil {
 			session, err := startHelperSession(w.Executable)
@@ -139,13 +140,16 @@ func (w *Worker) sessionRun(ctx context.Context) (Result, error) {
 				return result, errors.New(result.Error)
 			}
 			if result.RefreshOnly {
-				if w.lastResult.Status == "" {
-					return result, errors.New("HID refresh completed before the first Q1 status sample")
+				if w.lastResult.Status != "" {
+					return w.lastResult, nil
 				}
-				result = w.lastResult
-			} else {
-				w.lastResult = result
+				startupRefreshes++
+				if startupRefreshes >= 6 {
+					return result, errors.New("HID refresh did not produce a valid initial Q1 sample")
+				}
+				continue
 			}
+			w.lastResult = result
 			return result, nil
 		}
 	}

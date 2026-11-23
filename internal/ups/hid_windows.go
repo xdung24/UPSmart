@@ -320,6 +320,10 @@ func (s *nativeSession) Status() (Result, error) {
 		result.RefreshOnly = true
 		return result, nil
 	}
+	if statusText == "\x05" {
+		result.RefreshOnly = true
+		return result, nil
+	}
 	result.Status = normalizeHIDQ1(statusText)
 	if _, err := ParseQ1(result.Status); err != nil {
 		return result, fmt.Errorf("unsupported UPS status response: %w", err)

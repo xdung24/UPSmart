@@ -16,12 +16,36 @@ func TestMain(m *testing.M) {
 			time.Sleep(time.Minute)
 		case "oversized":
 			os.Stdout.WriteString(strings.Repeat("x", 40000))
+		case "refresh-only":
+			os.Stdout.WriteString(`{"devices":[{"product":"MEC0003"}],"refresh_only":true}`)
 		default:
 			os.Stdout.WriteString(`{"devices":[],"error":"test device absent"}`)
 		}
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+func TestRefreshOnlySessionUsesLastVerifiedQ1(t *testing.T) {
+	t.Setenv("UPSMART_TEST_HELPER", "refresh-only")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := Worker{
+		Executable: exe,
+		lastResult: Result{
+			Devices: []Device{{Product: "MEC0003"}},
+			Status:  "(230.0 000.0 230.0 010 50.0 27.0 30.0 00001000\r",
+		},
+	}
+	result, err := worker.Run(context.Background(), true)
+	if err != nil || result.Status != worker.lastResult.Status {
+		t.Fatalf("refresh-only response did not retain verified Q1: %+v %v", result, err)
+	}
+	if err := worker.Close(); err != nil {
+		t.Logf("helper stop: %v", err)
+	}
 }
 
 func TestWorkerBoundsBlockedNativeWork(t *testing.T) {

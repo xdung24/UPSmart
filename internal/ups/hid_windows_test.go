@@ -47,3 +47,9 @@ func TestNormalizeHIDQ1RepairsOnlyValidatedFirstCharacterCorruption(t *testing.T
 		}
 	}
 }
+
+func TestControl05IsNotAValidUPSFrame(t *testing.T) {
+	if _, err := ParseQ1("\x05"); err == nil {
+		t.Fatal("0x05 control response was accepted as telemetry")
+	}
+}
