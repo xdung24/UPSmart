@@ -40,7 +40,8 @@ type UI struct {
 	policy         *widget.Label
 	policyNote     *widget.Label
 	elapsed        *widget.Label
-	events         *widget.RichText
+	events         *widget.Label
+	logView        *container.Scroll
 	tabs           *container.AppTabs
 	shutdown       *widget.Button
 	cancelBtn      *widget.Button
@@ -94,11 +95,9 @@ func New(app fyne.App, api API) *UI {
 			container.NewVBox(output, load)),
 		container.NewGridWithColumns(3, battery, temperature, capacity),
 		widget.NewSeparator(), lights)
-	u.events = widget.NewRichText(&widget.TextSegment{
-		Style: widget.RichTextStyle{ColorName: theme.ColorNameForeground},
-	})
+	u.events = widget.NewLabel("")
 	u.events.Wrapping = fyne.TextWrapWord
-	u.events.Scroll = fyne.ScrollVerticalOnly
+	u.logView = container.NewVScroll(u.events)
 	settings := container.NewVBox(
 		widget.NewCard("General settings", "Not editable in this desktop",
 			widget.NewLabel("USB, hardware, Telegram and account settings remain in the active monitor's configuration. Shutdown policy is managed on the Shutdown tab.")),
@@ -127,7 +126,7 @@ func New(app fyne.App, api API) *UI {
 		container.NewTabItem("Data View", container.NewVScroll(data)),
 		container.NewTabItem("Setting", container.NewVScroll(settings)),
 		container.NewTabItem("Shutdown", container.NewVScroll(shutdown)),
-		container.NewTabItem("Log", u.events))
+		container.NewTabItem("Log", u.logView))
 	u.Window.SetContent(u.tabs)
 	if desktop, ok := app.(fynedesktop.App); ok {
 		desktop.SetSystemTrayIcon(AppIcon())
@@ -343,18 +342,22 @@ func (u *UI) Apply(snapshot control.Snapshot, err error) {
 	for _, event := range snapshot.Events.Items {
 		fmt.Fprintf(&events, "%s  [%s] %s\n", event.Time.Local().Format("2006-01-02 15:04:05"), event.Severity, event.Message)
 	}
+	if events.Len() == 0 {
+		events.WriteString("No events recorded yet.")
+	}
 	u.setEventLog(events.String())
 }
 
 func (u *UI) setEventLog(text string) {
-	if u.events.String() == text {
+	if u.events.Text == text {
 		return
 	}
-	u.events.Segments = []widget.RichTextSegment{&widget.TextSegment{
-		Text:  text,
-		Style: widget.RichTextStyle{ColorName: theme.ColorNameForeground},
-	}}
+	if text == "" {
+		text = "No events recorded yet."
+	}
+	u.events.SetText(text)
 	u.events.Refresh()
+	u.logView.Refresh()
 }
 
 func (u *UI) light(key string, known, active bool) {

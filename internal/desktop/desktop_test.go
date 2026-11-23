@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"io"
 	"strings"
@@ -14,8 +15,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
 
 	"upsmart/internal/control"
 	"upsmart/internal/policy"
@@ -104,16 +103,12 @@ func TestNativeViewShowsFreshUnavailableCountdownAndBackendLoss(t *testing.T) {
 	if ui.tabs.SelectedIndex() != 0 {
 		t.Fatal("desktop should open on the Data View tab")
 	}
-	if ui.tabs.Items[3].Content != ui.events {
-		t.Fatal("Log tab should contain only the event log")
+	if ui.tabs.Items[3].Content != ui.logView {
+		t.Fatal("Log tab should contain the scrollable event log")
 	}
 	ui.setEventLog("Readable event")
-	if ui.events.String() != "Readable event" || len(ui.events.Segments) != 1 {
+	if ui.events.Text != "Readable event" || ui.logView.Content != ui.events {
 		t.Fatal("event log text was not rendered")
-	}
-	segment, ok := ui.events.Segments[0].(*widget.TextSegment)
-	if !ok || segment.Style.ColorName != theme.ColorNameForeground {
-		t.Fatal("event log should use the current theme's foreground color")
 	}
 	_, isContainer := ui.Window.Canvas().Content().(*fyne.Container)
 	if isContainer || ui.Window.Canvas().Content() != ui.tabs {
@@ -210,6 +205,7 @@ func TestPowerFlowAnimationFollowsVerifiedModeAndLabelsUnknownPaths(t *testing.T
 		flow.details.Text != "Battery connected; charging status not reported" {
 		t.Fatalf("online flow made unsupported claims: state=%q details=%q", flow.state.Text, flow.details.Text)
 	}
+
 	flow.Advance()
 	if flow.phase == 0 {
 		t.Fatal("verified mains flow did not animate")
@@ -229,5 +225,28 @@ func TestPowerFlowAnimationFollowsVerifiedModeAndLabelsUnknownPaths(t *testing.T
 	flow.Advance()
 	if flow.phase != phase {
 		t.Fatal("unknown flow should not animate")
+	}
+}
+
+func TestEventLogRemainsReadableAcrossRepeatedUpdatesAndEmptyHistory(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	ui := New(app, new(unusedAPI))
+
+	var lines strings.Builder
+	for i := 0; i < 100; i++ {
+		fmt.Fprintf(&lines, "2026-11-23 10:00:%02d  [info] Event %d\n", i%60, i)
+	}
+	for i := 0; i < 10; i++ {
+		ui.setEventLog(lines.String())
+	}
+	if ui.events.Text != lines.String() || ui.logView.Content != ui.events {
+		t.Fatal("long event log disappeared after repeated refreshes")
+	}
+
+	snapshot := state.New(time.Second, false).Snapshot(time.Now())
+	ui.Apply(control.Snapshot{UPS: snapshot, Events: state.EventPage{}}, nil)
+	if ui.events.Text != "No events recorded yet." {
+		t.Fatalf("empty event history was not disclosed: %q", ui.events.Text)
 	}
 }

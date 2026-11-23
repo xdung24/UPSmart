@@ -2,6 +2,13 @@
 
 Last updated: 2026-11-23
 
+Log rendering: on 2026-11-23, repeated Fyne RichText refreshes caused the Log
+tab to become blank or show clipped fragments. The renderer now uses a wrapped
+Label in a vertical scroll container. A repeated 100-line refresh test and empty
+history test pass, along with `go vet .\internal\desktop`. Native screenshot
+verification remains pending. Details:
+[E-012](E-012-log-content-disappears.md).
+
 Intermittent `0x05`: on 2026-11-23 a live Telegram connection alert contained
 one control byte instead of a Q1 frame. This is not a mains/power event. The
 persistent helper now treats `0x05` as transient refresh and retains the last
@@ -78,5 +85,6 @@ The prior pipe/web/USB selection and loopback API checks are historical evidence
 | E-009 | Installer rejects equivalent Windows-normalized protected ACL | Historical fix verified / P1; installer replaced by user choice | 2026-11-16 | [Service ACL comparison](E-009-service-acl-normalization.md) |
 | E-010 | Service running without desktop IPC settings; normal-user desktop cannot connect | Configuration/default-setup observation / P1; defaults fixed, live retest pending | 2026-11-16 | [Desktop/service configuration](E-010-service-desktop-ipc-configuration.md) |
 | E-011 | Reopened metadata-only HID handle left Q1 stale, suppressing Telegram transitions | Fixed and live-verified / P1; install/reboot follow-up pending | 2026-11-22 | [Mains-loss detection](E-011-mains-loss-not-detected.md) |
+| E-012 | Log content disappears after repeated Fyne RichText refreshes | Fixed and regression-tested / P1; native visual retest pending | 2026-11-23 | [Log rendering](E-012-log-content-disappears.md) |
 
 The user's report of legacy UPSmart crashes is background context, not a reproduced defect in this replacement. Add flat `E-xxx-short-name.md` records only for actual observations, with unknown causes labeled explicitly.

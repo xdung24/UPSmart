@@ -1,6 +1,6 @@
 # F-018 - Fyne Windows desktop
 
-Updated: 2026-11-22 | Priority: P1 | Status: Car-battery icon applied; simplified flow and Telegram test added; live visual confirmation pending
+Updated: 2026-11-23 | Priority: P1 | Status: Log rendering fix added; car-battery icon and simplified flow completed; native visual retest pending
 
 ## Current scope - 2026-11-16
 
@@ -41,6 +41,9 @@ The user opens the desktop to see readings, power flow, connection/UPS/mains/bat
 - On 2026-11-22, the user supplied `car-battery.ico` as the desktop icon. The
   original ICO is embedded into the Windows executable; a PNG conversion is
   bundled for the Fyne application, window and system-tray icon.
+- The Log renderer is now a wrapped label in a vertical scroll container rather
+  than repeatedly replaced RichText segments. Details and regression evidence:
+  [E-012](E-012-log-content-disappears.md).
 
 ## Technical design and first delivery
 
@@ -115,6 +118,11 @@ The `car-battery.ico` resource is now used for the Windows executable, Fyne
 application, window and tray. A focused icon decode test, desktop tests and
 desktop vet passed. A Windows GUI build succeeded and the executable's
 associated icon was verified as 32×32; native visual review remains pending.
+
+On 2026-11-23, the user reported Log content disappearing after extended
+runtime. The RichText renderer was replaced with a stable scrollable label and
+an explicit empty-history message. A 100-line repeated-refresh regression test
+and desktop vet pass. Native visual retest remains pending.
 
 ### Connection and deployment
 
